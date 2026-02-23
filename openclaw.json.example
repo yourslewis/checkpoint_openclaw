@@ -1,0 +1,7 @@
+{
+  "note": "redacted example",
+  "apiKeys": {
+    "notion": "<REDACTED>",
+    "azure": "<REDACTED>"
+  }
+}

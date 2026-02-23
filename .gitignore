@@ -1,0 +1,12 @@
+openclaw.json
+workspace*/
+workspace-*/
+.nvm/
+.npm/
+.cache/
+.local/
+.ssh/
+.config/
+node_modules/
+*.tgz
+*.log
