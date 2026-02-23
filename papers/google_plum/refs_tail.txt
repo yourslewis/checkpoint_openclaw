@@ -1,0 +1,220 @@
+that lead to correct document. Additionally, the three smaller mod-
+                                                                           (about 5B examples), a more than 2x gap from the second largest
+els have processed more than one epoch of data, with MoE-110M
+                                                                           model. Our scaling study on the generative retrieval task reveals
+trained as many as 4.24 epochs but still showing no signs of over-
+                                                                           that compute-optimal training requires a synchronized scaling of
+fitting (see Figure 5b).
+                                                                           both training examples and model size.
+
+                                                                           4   Conclusion and Future Work
+                                                                           We introduced PLUM, a framework for adapting pre-trained LLMs
+                                                                           for large-scale recommendation tasks. Our method enhances item
+                                                                           tokenization with SIDv2, uses a large-scale continued pre-training
+                                                                           stage to align the LLM with user behavior and ground SIDs in text,
+                                                                           followed by a supervised fine-tuning stage to make the model excel
+                                                                           at generative retrieval.
+(a) Iso-FLOPS v.s. training Re- (b) Iso-FLOPS v.s. eval Recall@10.            As a launched platform in YouTube, PLUM is able to add unique
+call@10.                                                                   value to the current system, while being our first neural model built
+                                                                           without large embedding tables. Our ablations validate the value of
+Figure 5: Training and evaluation Recall@10 variation as we                the CPT stage, the benefit of initializing from a pre-trained LLM, and
+scale up training Iso-FLOPS.                                               our proposed SID techniques. This paper is a preliminary study on
+                                                                           aligning LLMs with real-world recommendation systems, opening
+                                                                           future research directions such as applying the PLUM framework
+   Optimal Model Size for Fixed Iso-FLOPS Budgets. In Figure 6, we         to other tasks like ranking and personalized search, developing new
+demonstrate the gradual shifts of optimal model size to larger ones        decoding strategies for candidate diversity, and enabling seamless
+as we increase the given Iso-FLOPS budgets. Note that our use of           generation of SIDs and natural languages.
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                         Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+5    Acknowledgements                                                                     [11] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya,
+                                                                                               Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes
+We would like to thank the following for their efforts and feed-                               Welbl, Aidan Clark, et al. 2022. Training compute-optimal large language models.
+back in the application of the techniques described in this paper                              arXiv preprint arXiv:2203.15556 (2022).
+                                                                                          [12] Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley,
+to a diverse set of surfaces and use cases (alphabetical order): Sak-                          and Wayne Xin Zhao. 2024. Large Language Models are Zero-Shot Rankers for
+sham Agarwal, Sriraj Badam, Sourabh Bansod, Xilun Chen, Yi Chen,                               Recommender Systems. Springer-Verlag, Berlin, Heidelberg, 364–381. doi:10.
+Bernardo Cunha, Onkar Dalal, Mingyan Gao, Elad Ganmor, Dan-                                    1007/978-3-031-56060-6_24
+                                                                                          [13] Yanhua Huang, Yuqi Chen, Xiong Cao, Rui Yang, Mingliang Qi, Yinghao Zhu,
+feng Guo, Pooja Gupta, Ralf Gutsche, Yuan Hao, Chuan He, Lily                                  Qingchang Han, Yaowei Liu, Zhaoyu Liu, Xuefeng Yao, Yuting Jia, Leilei Ma, Yinqi
+He, Yan Huang, Kate Jones, Jiewen Lang, Pengfei Li, Wen Li, Li                                 Zhang, Taoyu Zhu, Liujie Zhang, Lei Chen, Weihang Chen, Min Zhu, Ruiwen
+Wei, Sean Liew, Qiguang Liu, Sunny Liu, Yang Liu, Jianan Lu, Yi-                               Xu, and Lei Zhang. 2025. Towards Large-scale Generative Ranking. (2025).
+                                                                                               arXiv:2505.04180 [cs.IR] https://arxiv.org/abs/2505.04180
+long Luan, Shifan Mao, Tomer Margolin, Radwa Metwali, Aniruddh                            [14] Clark Mingxuan Ju, Liam Collins, Leonardo Neves, Bhuvesh Kumar, Louis Yufeng
+Nath, Hardik Patel, Amy Pu, Vasin Punyakanok, Murphy Ren, Yuji                                 Wang, Tong Zhao, and Neil Shah. 2025. Generative Recommendation with
+                                                                                               Semantic IDs: A Practitioner’s Handbook. (2025). arXiv:2507.22224 [cs.IR]
+Roh, Yuan Shao, Ajay Shekhawat, Fabio Soldo, Yanwei Song, Qian                                 https://arxiv.org/abs/2507.22224
+Sun, Jiaxi Tang, Aahan Tyagi, Diego Uribe, Jacky Wang, Ting Wang,                         [15] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Recom-
+Siqi Wu, Bo Yan, Shuhao Ye, Likang Yin, Qiao Zhang, Rein Zhang,                                mendation. arXiv:1808.09781 [cs.IR] https://arxiv.org/abs/1808.09781
+                                                                                          [16] Kaiyuan Li, Rui Xiang, Yong Bai, Yongxiang Tang, Yanhua Cheng, Xialong Liu,
+Sai Zhang, Vivian Zhang, Yaping Zhang, Gwendolyn Zhao, Zelong                                  Peng Jiang, and Kun Gai. 2025. BBQRec: Behavior-Bind Quantization for Multi-
+Zhao, Zhile Zou, Dav Zimak. We also thank Mahesh Sathiamoorthy                                 Modal Sequential Recommendation. (2025). arXiv:2504.06636 [cs.IR] https:
+and Anima Singh for their profound contributions to the conceptu-                              //arxiv.org/abs/2504.06636
+                                                                                          [17] Zhuoran Liu, Leqi Zou, Xuan Zou, Caihua Wang, Biao Zhang, Da Tang,
+alization and initial development of this project.                                             Bolin Zhu, Yijie Zhu, Peng Wu, Ke Wang, and Youlong Cheng. 2022. Mono-
+                                                                                               lith: Real Time Recommendation System With Collisionless Embedding Table.
+                                                                                               arXiv:2209.07663 [cs.IR] https://arxiv.org/abs/2209.07663
+References                                                                                [18] M. Jeffrey Mei, Florian Henkel, Samuel E. Sandberg, Oliver Bembom, and An-
+ [1] Yuwei Cao, Nikhil Mehta, Xinyang Yi, Raghunandan Keshavan, Lukasz Heldt,                  dreas F. Ehmann. 2025. Semantic IDs for Music Recommendation. arXiv preprint
+     Lichan Hong, Ed H. Chi, and Maheswaran Sathiamoorthy. 2024. Align-                        arXiv:2507.18800 (2025). arXiv:2507.18800 [cs.IR]
+     ing Large Language Models with Recommendation Knowledge. (2024).                     [19] Maxim Naumov, Dheevatsa Mudigere, Hao-Jun Michael Shi, Jianyu Huang,
+     arXiv:2404.00245 [cs.IR] https://arxiv.org/abs/2404.00245                                 Narayanan Sundaraman, Jongsoo Park, Xiaodong Wang, Udit Gupta, Carole-Jean
+ [2] Minmin Chen, Alex Beutel, Paul Covington, Sagar Jain, Francois Belletti, and Ed H.        Wu, Alisson G. Azzolini, Dmytro Dzhulgakov, Andrey Mallevich, Ilia Cherni-
+     Chi. 2019. Top-K Off-Policy Correction for a REINFORCE Recommender System.                avskii, Yinghai Lu, Raghuraman Krishnamoorthi, Ansha Yu, Volodymyr Kon-
+     In Proceedings of the Twelfth ACM International Conference on Web Search and              dratenko, Stephanie Pereira, Xianjie Chen, Wenlin Chen, Vijay Rao, Bill Jia, Liang
+     Data Mining (Melbourne VIC, Australia) (WSDM ’19). Association for Computing              Xiong, and Misha Smelyanskiy. 2019. Deep Learning Recommendation Model for
+     Machinery, New York, NY, USA, 456–464. doi:10.1145/3289600.3290999                        Personalization and Recommendation Systems. (2019). arXiv:1906.00091 [cs.IR]
+ [3] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019. Behavior                  https://arxiv.org/abs/1906.00091
+     sequence transformer for e-commerce recommendation in Alibaba. In Proceedings        [20] Netflix. 2024.          Foundation Model for Personalized Recommenda-
+     of the 1st International Workshop on Deep Learning Practice for High-Dimensional          tion.          https://netflixtechblog.com/foundation-model-for-personalized-
+     Sparse Data (Anchorage, Alaska) (DLP-KDD ’19). Association for Computing                  recommendation-1a0bd8e02d39.
+     Machinery, New York, NY, USA, Article 12, 4 pages. doi:10.1145/3326937.3341261       [21] Ming Pang, Chunyuan Yuan, Xiaoyu He, Zheng Fang, Donghao Xie, Fanyi Qu,
+ [4] Xiangyi Chen, Kousik Rajesh, Matthew Lawhon, Zelun Wang, Hanyu Li, Hao-                   Xue Jiang, Changping Peng, Zhangang Lin, Zheng Luo, and Jingping Shao. 2025.
+     miao Li, Saurabh Vishwas Joshi, Pong Eksombatchai, Jaewon Yang, Yi-Ping                   Generative Retrieval and Alignment Model: A New Paradigm for E-commerce
+     Hsu, Jiajing Xu, and Charles Rosenberg. 2025. PinFM: Foundation Model for                 Retrieval. In Companion Proceedings of the ACM on Web Conference 2025 (Sydney
+     User Activity Sequences at a Billion-scale Visual Discovery Platform. (2025).             NSW, Australia) (WWW ’25). Association for Computing Machinery, New York,
+     arXiv:2507.12704 [cs.LG] https://arxiv.org/abs/2507.12704                                 NY, USA, 413–421. doi:10.1145/3701716.3715228
+ [5] Benjamin Coleman, Wang-Cheng Kang, Matthew Fahrbach, Ruoxi Wang, Lichan              [22] Gustavo Penha, Edoardo D’Amico, Marco De Nadai, Enrico Palumbo, Alexandre
+     Hong, Ed H. Chi, and Derek Zhiyuan Cheng. 2023. Unified embedding: battle-                Tamborrino, Ali Vardasbi, Max Lefarov, Shawn Lin, Timothy Heath, Francesco
+     tested feature representations for web-scale ML systems. In Proceedings of the            Fabbri, and Hugues Bouchard. 2025. Semantic IDs for Joint Generative Search
+     37th International Conference on Neural Information Processing Systems (New               and Recommendation. (2025). arXiv:2508.10478 [cs.IR] https://arxiv.org/abs/
+     Orleans, LA, USA) (NIPS ’23). Curran Associates Inc., Red Hook, NY, USA, Article          2508.10478
+     2453, 22 pages.                                                                      [23] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Keshavan, Trung
+ [6] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep Neural Networks                    Vu, Lukasz Heidt, Lichan Hong, Yi Tay, Vinh Q. Tran, Jonah Samost, Maciej
+     for YouTube Recommendations. In Proceedings of the 10th ACM Conference on                 Kula, Ed H. Chi, and Maheswaran Sathiamoorthy. 2023. Recommender systems
+     Recommender Systems (Boston, Massachusetts, USA) (RecSys ’16). Association                with generative retrieval. In Proceedings of the 37th International Conference on
+     for Computing Machinery, New York, NY, USA, 191–198. doi:10.1145/2959100.                 Neural Information Processing Systems (New Orleans, LA, USA) (NIPS ’23). Curran
+     2959190                                                                                   Associates Inc., Red Hook, NY, USA, Article 452, 17 pages.
+ [7] Hamed Firooz, Maziar Sanjabi, Adrian Englhardt, Aman Gupta, Ben Levine,              [24] Anima Singh, Trung Vu, Nikhil Mehta, Raghunandan Keshavan, Maheswaran
+     Dre Olgiati, Gungor Polatkan, Iuliia Melnychuk, Karthik Ramgopal, Kirill Tala-            Sathiamoorthy, Yilin Zheng, Lichan Hong, Lukasz Heldt, Li Wei, Devansh Tandon,
+     nine, Kutta Srinivasan, Luke Simon, Natesh Sivasubramoniapillai, Necip Fazil              Ed Chi, and Xinyang Yi. 2024. Better Generalization with Semantic IDs: A
+     Ayan, Qingquan Song, Samira Sriram, Souvik Ghosh, Tao Song, Vignesh Kotha-                Case Study in Ranking for Recommendations. In Proceedings of the 18th ACM
+     palli, Xiaoling Zhai, Ya Xu, Yu Wang, and Yun Dai. 2025. 360Brew: A Decoder-              Conference on Recommender Systems (Bari, Italy) (RecSys ’24). Association for
+     only Foundation Model for Personalized Ranking and Recommendation. (2025).                Computing Machinery, New York, NY, USA.
+     arXiv:2501.16450 [cs.IR] https://arxiv.org/abs/2501.16450                            [25] Yi Tay, Vinh Q. Tran, Mostafa Dehghani, Jianmo Ni, Dara Bahri, Harsh Mehta,
+ [8] Yulong Gu, Zhuoye Ding, Shuaiqiang Wang, Lixin Zou, Yiding Liu, and Dawei                 Zhen Qin, Kai Hui, Zhe Zhao, Jai Gupta, Tal Schuster, William W. Cohen, and
+     Yin. 2020. Deep Multifaceted Transformers for Multi-objective Ranking in Large-           Donald Metzler. 2022. Transformer memory as a differentiable search index. In
+     Scale E-commerce Recommender Systems. In Proceedings of the 29th ACM In-                  Proceedings of the 36th International Conference on Neural Information Processing
+     ternational Conference on Information & Knowledge Management (Virtual Event,              Systems (New Orleans, LA, USA) (NIPS ’22). Curran Associates Inc., Red Hook,
+     Ireland) (CIKM ’20). Association for Computing Machinery, New York, NY, USA,              NY, USA, Article 1587, 13 pages.
+     2493–2500. doi:10.1145/3340531.3412697                                               [26] Gemini Team. 2024. Gemini 1.5: Unlocking multimodal understanding across
+ [9] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma,                millions of tokens of context. arXiv preprint arXiv:2403.05530 (2024).
+     Mincong Huang, Xiaoguang Li, Chunzhen Jing, Yueming Han, Menglei Zhou,               [27] Dongsheng Wang, Yuxi Huang, Shen Gao, Yifan Wang, Chengrui Huang, and
+     Lei Yu, Chuan Liu, and Wei Lin. 2025. MTGR: Industrial-Scale Generative Rec-              Shuo Shang. 2025. Generative Next POI Recommendation with Semantic ID.
+     ommendation Framework in Meituan. (05 2025). doi:10.48550/arXiv.2505.18654                (2025). arXiv:2506.01375 [cs.IR] https://arxiv.org/abs/2506.01375
+[10] Balázs Hidasi, Alexandros Karatzoglou, Linas Baltrunas, and Domonkos Tikk.           [28] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,
+     2016. Session-based Recommendations with Recurrent Neural Networks.                       and Ed Chi. 2021. DCN V2: Improved Deep & Cross Network and Practical
+     arXiv:1511.06939 [cs.LG] https://arxiv.org/abs/1511.06939                                 Lessons for Web-scale Learning to Rank Systems. In Proceedings of the Web
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                                He et al.
+
+
+     Conference 2021 (Ljubljana, Slovenia) (WWW ’21). Association for Computing         and learning rates. The outcomes of this pilot will inform the hy-
+     Machinery, New York, NY, USA, 1785–1797. doi:10.1145/3442381.3450078               perparameter selection for the subsequent, more extensive scaling
+[29] Orion Weller, Michael Boratko, Iftekhar Naim, and Jinhyuk Lee. 2025. On the
+     Theoretical Limitations of Embedding-Based Retrieval. arXiv:2508.21038 [cs.IR]     analysis, ensuring computational resources are utilized effectively.
+     https://arxiv.org/abs/2508.21038
+[30] Yi Xu, Moyu Zhang, Chenxuan Li, Zhihao Liao, Haibo Xing, Hao Deng, Jinxin          A.1.1 Experiment Setup. We ran four trainers each with 256 TPUs
+     Hu, Yu Zhang, Xiaoyi Zeng, and Jing Zhang. 2025. MMQ: Multimodal Mixture-          and initialized from the (same) pre-trained checkpoint. The pilot ran
+     of-Quantization Tokenization for Semantic ID Generation and User Behavioral
+     Adaptation. (2025). arXiv:2508.15281 [cs.IR] https://arxiv.org/abs/2508.15281
+                                                                                        for approximately two weeks, a period sufficient to establish clear
+[31] Liu Yang, Fabian Paischer, Kaveh Hassani, Jiacheng Li, Shuai Shao, Zhang Gabriel   performance trends. The “base setup" (Trainer A) uses a constant
+     Li, Yun He, Xue Feng, Nima Noorshams, Sem Park, Bo Long, Robert D Nowak,           learning rate of 1 × 10−4 and a batch size that saturates the available
+     Xiaoli Gao, and Hamid Eghbalzadeh. 2024. Unifying Generative and Dense
+     Retrieval for Sequential Recommendation. (2024). arXiv:2411.18814 [cs.IR]          HBM. The other configurations systematically vary one of these
+     https://arxiv.org/abs/2411.18814                                                   two hyperparameters.
+[32] Yuhao Yang, Zhi Ji, Zhaopeng Li, Yi Li, Zhonglin Mo, Yue Ding, Kai Chen, Zijian
+     Zhang, Jie Li, Shuanglong Li, and Lin Liu. 2025. Sparse Meets Dense: Unified
+     Generative Recommendations with Cascaded Sparse-Dense Representations.                 Table 7: Pilot Study Configurations with MoE-900M.
+     (2025). arXiv:2503.02453 [cs.IR] https://arxiv.org/abs/2503.02453
+[33] Yining Yao, Ziwei Li, Shuwen Xiao, Boya Du, Jialin Zhu, Junjun Zheng, Xiangheng
+     Kong, and Yuning Jiang. 2025. SaviorRec: Semantic-Behavior Alignment for Cold-              Trainer     Learning Rate       Batch Size
+     Start Recommendation. (2025). arXiv:2508.01375 [cs.IR] https://arxiv.org/abs/
+     2508.01375                                                                                  A (Base)        1 × 10−4        Saturate HBM
+[34] Wencai Ye, Mingjie Sun, Shaoyun Shi, Peng Wang, Wenjin Wu, and Peng Jiang.                  B               1 × 10−4        0.5x Saturate HBM
+     2025. DAS: Dual-Aligned Semantic IDs Empowered Industrial Recommender
+     System. (2025). arXiv:2508.10584 [cs.IR] https://arxiv.org/abs/2508.10584                   C               2 × 10−4        Saturate HBM
+[35] Xinyang Yi, Ji Yang, Lichan Hong, Derek Zhiyuan Cheng, Lukasz Heldt, Aditee                 D               5 × 10−5        Saturate HBM
+     Kumthekar, Zhe Zhao, Li Wei, and Ed Chi. 2019. Sampling-bias-corrected neural
+     modeling for large corpus item recommendations. In Proceedings of the 13th
+     ACM Conference on Recommender Systems (Copenhagen, Denmark) (RecSys ’19).
+     Association for Computing Machinery, New York, NY, USA, 269–277. doi:10.           A.1.2   Results.
+     1145/3298689.3346996
+[36] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao,            Learning Rate Sensitivity. The results indicate that the training
+     Zhaojie Gong, Fangda Gu, Jiayuan He, Yinghai Lu, and Yu Shi. 2024. Actions
+     Speak Louder than Words: Trillion-Parameter Sequential Transducers for Gen-        process is tolerant of different learning rates within a reasonable
+     erative Recommendations. In Proceedings of the 41st International Conference       range. Specifically, the performance difference between the base
+     on Machine Learning (Proceedings of Machine Learning Research, Vol. 235), Rus-     learning rate of 1 × 10−4 (Trainer A) and the lower rate of 5 × 10−5
+     lan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver,
+     Jonathan Scarlett, and Felix Berkenkamp (Eds.). PMLR, 58484–58509. https:          (Trainer D) was not statistically significant within the duration of
+     //proceedings.mlr.press/v235/zhai24a.html                                          the pilot study. However, doubling the learning rate to 2 × 10−4
+[37] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Daifeng Guo, Yanli Zhao,
+     Shen Li, Yuchen Hao, Yantao Yao, Guna Lakshminarayanan, Ellie Dingqiao Wen,
+                                                                                        (Trainer C) resulted in substantially worse performance, indicating
+     Jongsoo Park, Maxim Naumov, and Wenlin Chen. 2024. Wukong: Towards a               that this rate is likely outside the optimal range for this model and
+     Scaling Law for Large-Scale Recommendation. (2024). arXiv:2403.02545 [cs.LG]       dataset.
+     https://arxiv.org/abs/2403.02545
+[38] Zhe Zhao, Lichan Hong, Li Wei, Jilin Chen, Aniruddh Nath, Shawn Andrews,              Batch Size Sensitivity. Using a smaller batch size harms training
+     Aditee Kumthekar, Maheswaran Sathiamoorthy, Xinyang Yi, and Ed Chi. 2019.
+     Recommending what video to watch next: a multitask ranking system. In Pro-         efficiency. Halving the batch size requires more than double the
+     ceedings of the 13th ACM Conference on Recommender Systems (Copenhagen,            training steps to achieve a comparable level of performance. This
+     Denmark) (RecSys ’19).                                                             highlights the importance of maximizing batch size to the limits of
+[39] Carolina Zheng, Minhui Huang, Dmitrii Pedchenko, Kaushik Rangadurai, Siyu
+     Wang, Gaby Nahum, Jie Lei, Yang Yang, Tao Liu, Zutian Luo, Xiaohan Wei,            hardware memory for compute optimal training.
+     Dinesh Ramasamy, Jiyan Yang, Yiping Han, Lin Yang, Hangjun Xu, Rong Jin,
+     and Shuang Yang. 2025. Enhancing Embedding Representation Stability in             A.2     In-context Learning Examples
+     Recommendation Systems with Semantic ID. (2025). arXiv:2504.02137 [cs.IR]
+     https://arxiv.org/abs/2504.02137                                                   Table 8 shows a few examples to demonstrate the in-context learn-
+[40] Guorui Zhou, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Qiang Luo,
+     Qianqian Wang, Qigen Hu, Rui Huang, Shiyao Wang, Weifeng Ding, Wuchao Li,
+                                                                                        ing capability of the model after CPT with Semantic IDs. The CPT
+     Xinchen Luo, Xingmei Wang, Zexuan Cheng, Zixing Zhang, Bin Zhang, Boxuan           model based on pre-trained LLM was able to correctly complete
+     Wang, Chaoyi Ma, Chengru Song, Chenhui Wang, Di Wang, Dongxue Meng, Fan            the sentence with a semantically appropriate phrase, by following
+     Yang, Fangyu Zhang, Feng Jiang, Fuxing Zhang, Gang Wang, Guowang Zhang,
+     Han Li, Hengrui Hu, Hezheng Lin, Hongtao Cheng, Hongyang Cao, Huanjie              the few-shot task description. In contrast, if we apply the same recs
+     Wang, Jiaming Huang, Jiapeng Chen, Jiaqiang Liu, Jinghui Jia, Kun Gai, Lantao      pre-training on a randomly-initialized model, the model struggled
+     Hu, Liang Zeng, Liao Yu, Qiang Wang, Qidong Zhou, Shengzhe Wang, Shihui He,        to form a coherent phrase and made distinction between SID and
+     Shuang Yang, Shujie Yang, Sui Huang, Tao Wu, Tiantian He, Tingting Gao, Wei
+     Yuan, Xiao Liang, Xiaoxiao Xu, Xugang Liu, Yan Wang, Yi Wang, Yiwu Liu, Yue        text tokens.
+     Song, Yufei Zhang, Yunfan Wu, Yunfeng Zhao, and Zhanyu Liu. 2025. OneRec
+     Technical Report. arXiv:2506.13695 [cs.IR] https://arxiv.org/abs/2506.13695
+
+
+
+
+A Appendix
+A.1 Scaling Pilot Study
+As a precursor to our scaling study, we conducted a pilot study
+using the MoE-900M model. The goal of this pilot is to determine
+the model’s sensitivity to two hyperparameters: global batch size
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                      Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+                                                                           (a) Example 1
+
+
+
+
+  Video Thumbnail
+  Few-shot Input                                      The video A1991 ... H10 is about health and pain management.
+                                                      The video A364 ... H37 is about the basics of quantum physics.
+                                                      The video A37 ... H25 is about
+  LLM-Initialized CPT Output                          psychology and mind
+  Randomly-Initialized CPT Output                     100% video A252 H7
+
+
+                                                                           (b) Example 2
+
+
+
+
+  Video Thumbnail
+  Few-shot Input                                      Video A37 ... H41 answers the question: do you really need 8 hours of sleep?
+                                                      Video A1926 ... H8 answers the question: how buy-now pay-later loan business makes profit?
+                                                      Video A1882 ... H32 answers the question:
+  LLM-Initialized CPT Output                          the impact of language in your life.
+  Randomly-Initialized CPT Output                     - - - 100% -1999-11-16
+Table 8: Qualitative examples of few-shot, in-context learning example. Each table shows the text-based prompt and model’s
+output from two different initializations. The thumbnails (top) show the visual content for each corresponding Semantic ID in
+the prompt.
+

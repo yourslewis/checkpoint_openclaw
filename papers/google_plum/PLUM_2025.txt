@@ -1,0 +1,814 @@
+                                                             PLUM: Adapting Pre-trained Language Models for
+                                                               Industrial-scale Generative Recommendations
+                                                 Ruining He∗†                        Lukasz Heldt∗†                        Lichan Hong∗†                Raghunandan                     Shifan Mao∗
+                                               Google DeepMind                              YouTube                        Google DeepMind               Keshavan∗†                         YouTube
+                                                                                                                                                             YouTube
+
+                                               Nikhil Mehta∗†                        Zhengyang Su∗                           Alicia Tsai∗†               Yueqi Wang∗                    Shao-Chuan
+                                               Google DeepMind                              YouTube                        Google DeepMind                   YouTube                      Wang∗
+                                                                                                                                                                                     Google DeepMind
+
+                                                 Xinyang Yi∗†                          Lexi Baugher                         Baykal Cakici                    Ed Chi                 Cristos Goodrow
+arXiv:2510.07784v1 [cs.IR] 9 Oct 2025
+
+
+
+
+                                               Google DeepMind                              YouTube                               YouTube              Google DeepMind                     YouTube
+
+                                                 Ningren Han                                 He Ma                         Romer Rosales              Abby Van Soest                Devansh Tandon
+                                                      YouTube                               YouTube                               YouTube                    YouTube                       YouTube
+
+                                                                                         Su-Lin Wu                          Weilong Yang                 Yilin Zheng
+                                                                                            YouTube                               YouTube                    YouTube
+                                        Abstract                                                                                        CCS Concepts
+                                        Large Language Models (LLMs) pose a new paradigm of modeling                                    • Do Not Use This Code → Generate the Correct Terms for
+                                        and computation for information tasks. Recommendation systems                                   Your Paper; Generate the Correct Terms for Your Paper; Generate
+                                        are a critical application domain poised to benefit significantly from                          the Correct Terms for Your Paper; Generate the Correct Terms for
+                                        the sequence modeling capabilities and world knowledge inher-                                   Your Paper.
+                                        ent in these large models. In this paper, we introduce PLUM, a
+                                        framework designed to adapt pre-trained LLMs for industry-scale                                 Keywords
+                                        recommendation tasks. PLUM consists of item tokenization using                                  Recommender Systems, Generative Retrieval, Large Language Mod-
+                                        Semantic IDs [23, 24], continued pre-training (CPT) on domain-                                  els
+                                        specific data, and task-specific fine-tuning for recommendation
+                                        objectives. For fine-tuning, we focus particularly on generative re-                            ACM Reference Format:
+                                        trieval, where the model is directly trained to generate Semantic IDs                           Ruining He, Lukasz Heldt, Lichan Hong, Raghunandan Keshavan, Shifan
+                                        of recommended items based on user context. We conduct compre-                                  Mao, Nikhil Mehta, Zhengyang Su, Alicia Tsai, Yueqi Wang, Shao-Chuan
+                                        hensive experiments on large-scale internal video recommendation                                Wang, Xinyang Yi, Lexi Baugher, Baykal Cakici, Ed Chi, Cristos Goodrow,
+                                                                                                                                        Ningren Han, He Ma, Romer Rosales, Abby Van Soest, Devansh Tandon,
+                                        datasets. Our results demonstrate that PLUM achieves substantial
+                                                                                                                                        Su-Lin Wu, Weilong Yang, and Yilin Zheng. 2018. PLUM: Adapting Pre-
+                                        improvements for retrieval compared to a heavily-optimized pro-                                 trained Language Models for Industrial-scale Generative Recommendations.
+                                        duction model built with large embedding tables. We also present                                In Proceedings of Make sure to enter the correct conference title from your
+                                        a scaling study for the model’s retrieval performance, our learn-                               rights confirmation email (Conference acronym ’XX). ACM, New York, NY,
+                                        ings about CPT, a few enhancements to Semantic IDs, along with                                  USA, 11 pages. https://doi.org/XXXXXXX.XXXXXXX
+                                        an overview of the training and inference methods that enable
+                                        launching this framework to billions of users in YouTube.
+                                                                                                                                        1    Introduction
+                                        ∗ Core contributors. Alphabetical order.
+                                        † Corresponding authors: Xinyang Yi (xinyang@google.com), Lukasz Heldt
+                                                                                                                                        Recommender systems are critical in modern digital platforms,
+                                        (heldt@google.com), Raghunandan Keshavan (hkraghunandan@google.com), Ru-
+                                                                                                                                        profoundly shaping how users discover and interact with content.
+                                        ining He (ruininghe@google.com), Nikhil Mehta (nikhilmehta@google.com), Ali-                    The last decades have witnessed the remarkable success of deep
+                                        cia Tsai (aliciatsai@google.com), and Lichan Hong (lichan@google.com).                          learning models for recommendation in both retrieval and ranking
+                                                                                                                                        stages. Despite the use of neural networks, the dominant paradigm
+                                        Permission to make digital or hard copies of all or part of this work for personal or
+                                        classroom use is granted without fee provided that copies are not made or distributed           in industrial recommenders continues to rely on massive embed-
+                                        for profit or commercial advantage and that copies bear this notice and the full citation       ding tables to represent high-cardinality categorical features such
+                                        on the first page. Copyrights for components of this work owned by others than the              as item IDs (see, e.g., [5, 6, 17, 19]). In these Large Embedding Mod-
+                                        author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+                                        republish, to post on servers or to redistribute to lists, requires prior specific permission   els (LEMs), the vast majority of parameters reside within these
+                                        and/or a fee. Request permissions from permissions@acm.org.                                     embedding tables. While highly effective at memorizing user-item
+                                        Conference acronym ’XX, Woodstock, NY                                                           interactions, this architectural choice hinders the potential bene-
+                                        © 2018 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+                                        ACM ISBN 978-1-4503-XXXX-X/2018/06                                                              fits of deeper, more complex networks (e.g., [3, 8]). This scaling
+                                        https://doi.org/XXXXXXX.XXXXXXX                                                                 methodology, focused on enlarging embedding tables, is in contrast
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                              He et al.
+
+
+to that of LLMs, which emphasizes on increasing neural network          while PLUM retrieval uses a Transformer architecture that has
+sizes to learn compositions of compact input tokens.                    100x dense parameters than LEM, the overall training cost for the
+   The success of LLMs has inspired an emerging paradigm shift          retrieval task is comparable due to faster convergence. We also
+for building recommendation models [4, 7, 21, 23, 36, 40]. The in-      observe effective scaling: the retrieval performance continues to
+herent sequence modeling capabilities and vast world knowledge          improve up to a Mixture-of-Experts (MoE) model with over 900M
+encoded in LLMs present opportunities for building more intelli-        activated parameters (approximately 4.2B parameters in total).
+gent and personalized recommender systems. However, adapting               In addition to these contributions, we will share practical learn-
+LLMs for recommendations is non-trivial. The primary challenge          ings from deploying PLUM-based retrieval in a large-scale produc-
+lies in bridging the domain gap: LLMs are not pre-trained with          tion environment, particularly on the comparisons between PLUM
+user behavior data and item corpus in the target domain, making         retrieval and LEM-based retrieval in online A/B testing. The PLUM
+it harder for them to understand user preferences from user ac-         framework is in production for YouTube recommendations, serving
+tivities and nuanced item quality. Consequently, directly applying      the retrieval of both long-form and short-form videos on multiple
+off-the-shelf LLMs to recommendation tasks has shown a persis-          core surfaces via online and offline inference.
+tent performance gap, even on small public datasets [12]. Secondly,
+the traditional input representation based on large embedding ta-       1.1    Related Work
+bles poses a scaling challenge. These tables demand large amounts
+                                                                        We’ve seen two primary lines of work inspired by the recent ad-
+of training data, making it expensive to train large Transformer
+                                                                        vancements of LLMs. The first line of work focuses on scaling up
+architectures.
+                                                                        the neural network component of LEMs with Transformer architec-
+   This paper takes a step in the direction of teaching LLMs to solve
+                                                                        ture (or its variant), which we discuss in Section 1.1.1. The second
+recommendation tasks. We introduce PLUM, a framework for ef-
+                                                                        line, as detailed in Section 1.1.2 and 1.1.3, focuses on token-based
+fectively adapting pre-trained LLMs for industrial-scale generative
+                                                                        generative recommendation, and recasts recommendation retrieval
+recommendation. PLUM consists of three key stages:
+                                                                        as seq2seq transduction tasks.
+     • Item tokenization. Each item in the corpus is represented
+       by a sequence of discrete tokens known as Semantic IDs           1.1.1 Sequential Recommendations. Modeling user sequences and
+       (SIDs). Building on the prior work with RQ-VAE [23, 24],         feature interactions have been key areas for improving recommen-
+       we introduce a set of new techniques (referred to as SID-v2)     dation models, ranging from using classic sequential neural net-
+       for incorporating user behavioral signals and multi-modal        works [10, 15] to designing custom feature interaction components
+       content embeddings, and improve the hierarchical integrity       [28, 37]. More recently, the emerging trend is to use a Transformer-
+       through multi-resolution codebooks and progressive mask-         like architecture to unify user history and heterogeneous features
+       ing.                                                             in a single sequence [9, 13, 36], showing better scaling compared to
+     • Continued pre-training (CPT). In this stage, the vocab-          traditional MLP architectures. Furthermore, the training paradigm
+       ulary of a pre-trained LLM is expanded to include the new        itself has evolved to mirror that of LLMs, with some works adopting
+       SID tokens. The model is further pre-trained on a mixture of     self-supervised pre-training objectives followed by task-specific
+       domain-specific item data and user sequences, and general-       fine-tuning [4, 20]. A common thread across all these advancements
+       domain text data to align the new SID modality with model’s      is their continued reliance on massive embedding tables for cate-
+       existing knowledge.                                              gorical features. Our work departs from this paradigm by replacing
+     • Task-specific fine-tuning. Finally, the model is fine-tuned      large embedding tables with compact input tokens. Besides SIDs,
+       for specific recommendation objectives. While PLUM can           we use LLMs to process heterogeneous features by tokenizing nu-
+       support various downstream tasks, this paper focuses on          merical features or simply use dense embedding features as soft
+       its application to generative retrieval, where a decoder-only    tokens.
+       model is trained to autoregressively generate the SIDs of next
+                                                                        1.1.2 Semantic IDs and Quantization. The concept of representing
+       items a user is likely to engage with. Generative retrieval
+                                                                        items as sequences of discrete tokens, or Semantic IDs (SIDs), has
+       does not need to maintain a separate index of an item corpus,
+                                                                        emerged as a powerful alternative to traditional ID embeddings.
+       and bypasses the dot-product limitation [29] in embedding-
+                                                                        This approach allows items to be treated as a "language" that can
+       based retrieval [6, 35].
+                                                                        be processed by sequence models. Early work demonstrated the
+   The PLUM framework is designed to address the aforementioned         feasibility of training retrieval models from scratch to predict SIDs
+challenges. The continued pre-training bridges the domain gap by        [23], and subsequent research showed that SIDs could be hashed to
+enriching the pre-trained LLMs with domain corpus and user behav-       replace random item ID embeddings, enhancing generalization of
+ior patterns. We observe that the model after CPT can demonstrate       ranking models [24, 39].
+basic few-shot learning capability for generating text tokens based        A significant body of recent research has focused on improving
+on SID input. The SID-based input representation circumvents the        the quality and expressiveness of SIDs by incorporating diverse sig-
+scaling bottleneck of LEMs. Our experiments show that by shifting       nals into the quantization process. This includes fusing multi-modal
+the model complexity from input embeddings to the neural net-           content features [30] and injecting collaborative filtering signals
+works, PLUM-based generative retrieval can achieve significantly        from user behaviors [16, 22, 33, 34]. PLUM contributes to this line
+better sample efficiency compared to a production Transformer-          of research in parallel. Different from MMQ [30], where different
+based retrieval model with large embedding tables. Because of this,     tokens are generated for each modality, we simply concatenate
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                  Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+multiple content embeddings before encoding them with an MLP,                        our framework to be agnostic to the specific number and type of
+offering the flexibility of supporting more embeddings. For incorpo-                 input sources, enabling it to ingest and fuse multiple, heteroge-
+rating user behaviors, while most works fuse collaborative-filtering                 neous representations. The model is designed to accept a set of
+(CF) item embeddings to content embeddings during quantization,                      distinct embedding vectors {𝑥𝑚 }𝑚=1      𝑀 for each item. The fusion of
+
+the CF-based item embeddings are usually dynamic depending on                        such multiple representations is achieved through a separate em-
+item popularity change, necessitating frequent retraining of the                     bedding encoder E𝑚 that encodes 𝑥𝑚 into a latent vector 𝑧𝑚 and a
+quantizer and downstream models. We avoid this by using CF sig-                      concatenation 𝑧˜ = [𝑧 1, . . . , 𝑧𝑀 ] followed by a projection, creating a
+nals in a contrastive training objective to guide the quantizer to                   single, unified feature encoded vector 𝑧. By integrating information
+capture useful information from content information. In addition,                    from across modalities, we form a superior input for the subsequent
+we present two other key innovations for improving the alignment                     RQ-VAE quantization process, ensuring that the resulting SIDs are
+of SID training with generative retrieval.                                           grounded in a comprehensive understanding of the item’s content.
+1.1.3 Generative Retrieval and Alignment. Generative retrieval re-                   2.1.2 Hierarchical Refinements in Quantization. We further refine
+frames recommendation retrieval as a sequence-to-sequence task                       the RQ-VAE architecture itself to produce a more efficient and
+where the model directly generates the SIDs of relevant items in                     meaningful hierarchy. This involves two key innovations:
+an autoregressive manner. This idea has gained significant traction
+                                                                                             • Multi-Resolution Codebooks: Prior work [23] employs
+across the industry (e.g., [14, 18, 21, 27]), since the seminal works
+                                                                                               a fixed uniform-resolution codebooks that can be paramet-
+in document search [25] and recommendation [23]. For instance,
+                                                                                               rically inefficient, leading to a vast and sparsely populated
+OneRec [40] adopts an encoder-decoder architecture to generate
+                                                                                               SID space where the majority of potential codeword com-
+video SIDs, and leverages RL training to enhance the model quality
+                                                                                               binations remain unassigned. We replace this with a multi-
+with a reward model. Other works [31, 32] propose hybrid models
+                                                                                               resolution codebook structure, where the initial SID levels
+that generate both SIDs and dense embeddings to alleviate the in-
+                                                                                               have high resolution and are maximally discriminative, while
+formation loss from quantization. A commonality among most of
+                                                                                               subsequent codewords encode low-entropy residuals with
+these approaches is their focus on training generative models from
+                                                                                               lower resolution. In particular, the codebook cardinality is a
+scratch. Our work has a focus on aligning SIDs with LLMs, and
+                                                                                               function of the quantization level: 2048/2𝑙𝑒𝑣𝑒𝑙 −1 resulting in
+investigates the impact of LLM pre-training and CPT on generative
+                                                                                               a more compact and efficient SID.
+retrieval performance. While some research [1, 7] has explored
+                                                                                             • Progressive Masking: To enforce a stricter and more in-
+aligning LLMs with recommendation tasks, their focus is primarily
+                                                                                               terpretable hierarchy during residual quantization, we intro-
+on language interfaces. There is limited study of how to effectively
+                                                                                               duce progressive masking. In particular, we define a binary
+incorporate SIDs as a new modality.
+                                                                                               mask scalar 𝑚𝑙 ∈ {0, 1} where 𝑙 is the codebook level such
+                                                                                               that 𝑚𝑙 = 1𝑙 <𝑟 where 𝑟 ∈ [1, 𝐿] is a random integer and 𝐿 is
+2 PLUM Framework                                                                               the total number of codebook levels. This mask is applied to
+2.1 Semantic IDs                                                                               select the first 𝑟 codebook levels in SID training.
+A Semantic ID (SID) is conceptualized as a tuple of discrete code-
+                                                                                     2.1.3 RQ-VAE with Co-occurrence Contrastive Regularization. SIDs
+words derived from an item’s underlying content features. This
+                                                                                     derived purely from an item’s intrinsic content may not fully cap-
+process involves two primary stages: (1) encoding high-level con-
+                                                                                     ture the notion of similarity as perceived by users in a recom-
+tent features into a dense semantic embedding, and (2) quantizing
+                                                                                     mendation context. User behavior provides a powerful, extrinsic
+this embedding into a hierarchical tuple of codewords. The effi-
+                                                                                     signal of video relatedness; videos that are frequently watched to-
+cacy of a generative retrieval model is fundamentally dependent
+                                                                                     gether are often semantically linked. To bridge this gap between
+on the semantic richness and structural integrity of the SIDs. Build-
+                                                                                     content-based and behavior-based similarity, we inject a strong
+ing upon the foundational TIGER framework, which leverages a
+                                                                                     collaborative signal directly into the ID generation phase by in-
+Residual-Quantized Variational AutoEncoder (RQ-VAE), we intro-
+                                                                                     troducing a co-occurrence contrastive loss term (L𝑐𝑜𝑛 ) into the
+duce a series of significant enhancements to this generation process.
+                                                                                     RQ-VAE training objective. This objective function is designed to
+The initial approach was limited by its reliance on a single content
+                                                                                     shape the embedding space based on item co-occurrence patterns
+embedding source and an absence of collaborative signals in the ID
+                                                                                     within user interaction sequences. The loss encourages the model
+structure. Our methodology is designed to produce SIDs that are
+                                                                                     to generate similar SID representations for items that frequently
+more comprehensive, better aligned with user behavior, and more
+                                                                                     appear together, while pushing apart the representations of items
+hierarchically coherent. Figure 1 illustrates our overall design for
+                                                                                     that do not. In particular, the contrastive loss is defined as:
+training the SID model.
+                                                                                                                  2𝑁
+2.1.1 Fused Multi-Modal Content Representation. A primary lim-
+                                                                                                                  ∑︁𝑏   𝑒𝑥𝑝 (𝑠𝑖𝑚(𝑝𝑖 , 𝑝𝑖+ ))
+                                                                                                       L𝑐𝑜𝑛 = −       Í2𝑁𝑏                      ,               (1)
+itation of relying on a single content representation in [23] is its                                              𝑖=1  𝑗=1 𝑒𝑥𝑝 (𝑠𝑖𝑚(𝑝𝑖 , 𝑝 𝑗 ))
+inherent inability to capture the multi-faceted nature of complex
+media items. For instance, a video’s full semantic meaning is con-                   where 𝑝𝑖 represents a video representation in a batch of 𝑁𝑏 videos,
+veyed through a combination of its textual metadata, visual content,                 𝑝𝑖∗ represents the representation of the video that co-occurred with
+and audio. A unimodal representation, by definition, overlooks rich,                 video 𝑖 and 𝑠𝑖𝑚(𝑝𝑖 , 𝑝 𝑗 ) is the dot-product similarity between videos
+orthogonal sources of information. To overcome this, we architect                    𝑖 and 𝑗.
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                                                                                     He et al.
+
+
+                                             Co-occurring Pairs
+
+
+
+
+                                                                                                                                                                            Embed 1
+                                     Video 1              Video 2
+
+
+
+
+                                                                                                                                                                                      Reconstruction Loss
+                                                                                                                                                                  DNN
+                                         Embed 1              Embed 1                                                                                           Decoder 1
+
+                                         Embed 2              Embed 2
+
+
+
+
+                                                                                                                                                                            Embed 2
+                                                                                                    Residual Quantization                                         DNN
+                               Embed 1                                                                                                                          Decoder 2
+                                                                             Codebook 0       Codebook 1       Codebook 2        Codebook 3     Codebook 4
+                                             DNN
+
+
+
+
+                                                          Concat & Project
+                                           Encoder 1
+
+
+
+
+                                                                                                                                                                            Video 2
+
+
+
+                                                                                                                                                                                      Contrastive Loss
+                                                                              A =   -         B = A -           C = B   -         D = C -         E = D -
+                                                                                                                                                                  MLP
+                               Embed 2
+
+
+
+
+                                             DNN
+                                           Encoder 2
+                                                                                          +                +                +               +               =
+
+
+
+
+                                                                                                                                                                            Video 1
+                                                                                                                                                                  MLP
+
+
+
+Figure 1: Illustration of our Semantic ID model. It takes two multi-modal video embeddings, encodes them, and compresses the
+result into a quantized ID using a residual quantizer. This ID is trained to both reconstruct the original inputs and semantically
+cluster co-occurring videos using a contrastive loss.
+
+
+2.1.4 SID Training Loss. In addition to the training loss introduced                                                            Table 1: Example schemas used in continued pre-training.
+in [24], we introduce the co-occurence contrastive loss term. In
+particular, the overall loss is defined as:                                                                                      Example user behavior training data
+                                                                                                                                 wh = <sid_1> <channel_name> <watch_ratio> <watch_time>
+                                                                                                                                 <hours_since_final_watch> <sid_2> <channel_name> ... || <sid_n>
+                        L = L𝑟𝑒𝑐𝑜𝑛 + L𝑟𝑞 + L𝑐𝑜𝑛 ,                                                       (2)
+                                                                                                                                 SID + video title
+                                                                                                                                 Video <sid> has title (en): <video_title>
+where L𝑟𝑒𝑐𝑜𝑛 = 𝑚=1 ||𝑥𝑚 − 𝑥ˆ𝑚 || 2 is the reconstruction loss for
+                     Í𝑀
+each multi-modal embedding and L𝑟𝑞 = 𝑙=1
+                                                     Í𝐿
+                                                          𝛽 ||𝑟𝑙 − 𝑠𝑔[𝑒 ∗𝑙 ]|| 2 +                                               SID + video topics
+
+ ||𝑠𝑔[𝑟𝑙 ] − 𝑒 ∗𝑙 || 2 , where 𝑒 ∗𝑙 is the closest code in the codebook at                                                       The topics in video <sid> are: <topics>
+level 𝑙, 𝑟𝑙 = 𝑟𝑙 −1 − 𝑒 ∗𝑙 is the residual computed recursively at each
+level starting with 𝑟 0 = 𝑧 and sg is the stop-gradient operator. As
+shown in figure 1, the final quantized vector 𝑧ˆ is computed with
+progressive masking as the sum of chosen codes from each level:                                                                    Data Mixture and Training. The training set for the CPT stage is
+     Í𝐿                                                                                                                         composed of a mixture of the user behavior data and the video meta-
+𝑧ˆ = 𝑙=1    𝑚𝑙 𝑒 ∗𝑙 . The quantized vector is then used as an input for
+                                                                                                                                data corpus, with each source accounting for 50% of the training
+each decoder D𝑚 to reconstruct the input embeddings 𝑥ˆ𝑚 .
+                                                                                                                                examples. The CPT stage undergoes 1 million training steps with a
+                                                                                                                                batch size of 16, amounting to approximately 260 billion tokens in
+2.2     Continued Pre-training                                                                                                  total. We set up various evaluations to measure the performance of
+Following the creation of the SID vocabulary, one primary objective                                                             generating SIDs based on user history, the ability to jointly model
+of the continued pre-training (CPT) stage is to develop a base model                                                            SIDs and language through held-out video metadata corpus and
+checkpoint where the SID tokens are semantically grounded and                                                                   tracking the degradation of general language capabilities through
+aligned with existing text tokens of the base language model. To                                                                standard text benchmarks.
+achieve this, we train the model using next-token predictions on a
+large-scale corpus constructed from two primary sources:                                                                          In-context Learning. The CPT models, having been trained on a
+                                                                                                                                mixed corpus of SIDs and natural language, retain the flexibility to
+      • User behavior data: This source is essential for personal-                                                              generate free-form text, and have the in-context few-shot learning
+        ization and capturing watch histories. During training, each                                                            capability. We provide some examples in Appendix A.2.
+        example leverages user watch histories along with additional
+        watch features to model user behavior sequences.                                                                        2.3         Generative Retrieval
+      • Video metadata corpus: This large-scale corpus is designed
+        to create a strong association between SIDs and their corre-                                                        While the continued pre-training (CPT) stage enables the model to
+        sponding textual features. Each example includes a video’s                                                          generate next-video SIDs from user history, a subsequent Super-
+        SID, title, description, ASR captions, channel name, and syn-                                                       vised Fine-Tuning (SFT) stage is essential to specialize it for the
+        thetically generated data.                                                                                          retrieval task. This SFT stage allows the model to incorporate a
+                                                                                                                            richer set of features, particularly real-time context, and to be opti-
+Table 1 illustrates our CPT training data schema.                                                                           mized directly for a reward signal that aligns with user experience.
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                 Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+                                                                                       detailed scaling study to analyze the relationship between model
+                                                                                       size, compute, and retrieval performance (Section 3.4).
+
+                                                                                       3.1     Performance of Generative Retrieval
+                                                                                       Traditional recommender systems use large embedding models to
+                                                                                       recommend candidates. However, generative retrieval has a number
+                                                                                       of advantages over traditional systems. In this section, we study
+                                                                                       the effectiveness of generative retrieval on the YouTube production
+                                                                                       setup.
+                                                                                       3.1.1   Experiment Setup.
+                                                                                          Model. For the following experiments, we trained a 900M activated-
+                                                                                       param PLUM model from the Gemini-1.5 Mixture-of-Experts (MoE)
+                                                                                       family on both Long Form Video (LFV) and Shorts. The model is
+Figure 2: Illustration of Generative Retrieval for next video
+                                                                                       warm started from Gemini and continuously finetuned on new en-
+recommendation. The input prompt is a sequence of inter-
+                                                                                       gagement data as described above. The training data is a mixture of
+leaved SID tokens, text and custom tokens for numerical
+                                                                                       the most recent data and historical data. During serving, target se-
+features.
+                                                                                       quences are decoded using beam search. In our experiments, beam
+                                                                                       search performed better than random decoding, although at the
+                                                                                       cost of some diversity.
+   This fine-tuning employs a standard autoregressive, maximum-
+likelihood objective. The model learns to predict the SID tokens                          Baseline. We compare the performance of the above model to
+of ground-truth videos, which are defined as clicked videos from                       traditional LEM retrieval. This baseline is the top-performing pro-
+user logs given user context and history. Concretely, the model is                     duction model, being highly-optimized since early work such as
+trained to minimize the following loss:                                                Chen et al. [2]. This model is also based on the Transformer ar-
+                                                                                       chitecture, but most of its parameters are in the embedding layer,
+            𝐿                                                                          with O(10M) vocab sizes for input and output item IDs. Specifically,
+           ∑︁
+LSFT = −          𝑟 (user, 𝑣𝑐𝑙𝑖𝑐𝑘 )·log 𝑃 (𝑠𝑖𝑑𝑡 |Contextuser, Historyuser, 𝑠𝑖𝑑 <𝑡 ),   LEM’s neural network comprises only 0.4% of its total parameters,
+           𝑡 =1                                                                        whereas PLUM’s neural network accounts for 90%.
+                                                                       (3)
+                                                                                       3.1.2   Experiment Results.
+where [𝑠𝑖𝑑 1, .., 𝑠𝑖𝑑𝐿 ] represents the SID of clicked video 𝑣𝑐𝑙𝑖𝑐𝑘 , and
+𝑟 (𝑢𝑠𝑒𝑟, 𝑣𝑐𝑙𝑖𝑐𝑘 ) is a handcrafted reward signal of each click. In prac-                  Recommendation Quality. We assess the quality of recommenda-
+tice, given the high cost of training, we sample training examples                     tions on a few different axes. First, we measure the effective vocab
+based on this reward and then weigh the sampled examples equally                       size of a recommender as the number of unique videos needed
+in the loss. As illustrated in Figure 2, the input prompt contains not                 to cover 95% of its impressions. Higher vocab sizes are generally
+only SID tokens and custom tokens for numerical features, but also                     desirable for personalized discovery of niche content, showing the
+other text features that can be naturally encoded by pre-trained                       model can generalize better. Next, we compare the effectiveness
+LLMs.                                                                                  of recommendations using two metrics: a) The click-through-rate
+    During inference, we use beam search to decode multiple SID                        (CTR) and Recommendation Acceptance. For Recommendation Ac-
+sequences, which serve as the set of retrieved candidates. Each                        ceptance, we compare both the length of video watched (WT/View)
+generated SID is then mapped to a real video in our billions-scale                     and the fraction of video watched (WF/View). In all cases, we report
+corpus. While this generative process can potentially produce in-                      the ratio of the metric for the 900M MoE to the metric for the LEM
+valid SIDs (hallucination) or SID-to-video collisions, we observe                      model.
+that the hallucination rate after SFT is very low (< 5%), and the
+uniqueness of SID-to-video mapping remains high (see Table 4).                         Table 2: Comparison of recommendation quality: Each num-
+                                                                                       ber is a ratio, dividing the metric for PLUM by that of LEM.
+3    Experiments
+In this section, we conduct a comprehensive set of experiments to                                     Metric                    LFV      Shorts
+validate the PLUM framework. We first evaluate the performance                                        Effective Vocab Size     2.60x     13.24x
+of a PLUM-based generative retrieval model against a Transformer-                                     CTR                      1.42x      1.33x
+based large-embedding retrieval model that contributes to a ma-                                       WT/View                  0.72x      1.13x
+jority of impressions in production (Section 3.1). Following this,                                    WF/View                  1.32x      1.03x
+Section 3.2 demonstrates the effectiveness of our proposed enhance-
+ments to SIDs. We then conduct ablation studies for two critical
+components in the PLUM framework: Section 3.3 quantifies the                             We observe that the PLUM model achieves much larger effective
+precise impact of the continued pre-training (CPT) stage and the                       vocab size, while having competitive performance against LEM
+value of initializing from a pre-trained LLM. We finally present a                     based on the metrics related to user reactions.
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                   He et al.
+
+
+   Live Experiments. We ran live experiments by adding the PLUM                 SID Model                SID Uniqueness   VID Recall@10
+model recommendations to the candidate pool. For a fair compar-                 SIDv1 (Baseline)         94.0%            12.3%
+ison, we increased the quota (by the same amount) for the best                  SIDv2 (Ours)             96.7%            14.4%
+performing retrieval model in production and use this as the base-
+                                                                                Ablate     Multi-        94.8%            13.2%
+line. We denote this modified production baseline as LEM+. In the
+                                                                                Resolution
+following table, we report the metric movements observed with                   Ablate     Multi-        96.9%            12.8%
+respect to LEM+ on four key metrics, for both LFV and Shorts. This              Embedding
+demonstrates that PLUM-based retrieval can add unique value on                  Ablate      Co-          91.8%            12.6%
+top of the existing system, even without large embedding tables.                occurence
+                                                                                 Table 4: Ablation experiments on SIDv2 changes
+Table 3: Comparison of engagement: Percentage change by
+adding PLUM compared to LEM+
+
+                  Metric                LFV       Shorts                each tailored with a specific learning objective and a corresponding
+                                                                        set of hyperparameters. To evaluate the distinct contributions of
+                  Engaged Users        +0.07%     +0.28%
+                                                                        each step, we design a controlled 2x2 ablation study. This involves
+                  Panel CTR            +0.76%     +4.96%
+                                                                        four model configurations that share the same decoder-only Trans-
+                  Views                +0.80%     +0.39%
+                                                                        former architecture. We use the MoE-900M architecture for this
+                  Satisfaction         +0.06%     +0.39%
+                                                                        study. The four models are as follows:
+                                                                                • R1: retrieval SFT (random init). Transformer model is di-
+                                                                                  rectly trained on the generative retrieval task with randomly
+  Sample Efficiency. In our studies, PLUM models are extremely
+                                                                                  initialized weights.
+sample efficient. The 900M MoE model trains on roughly 250M
+                                                                                • R2: retrieval SFT (LLM init). This model is initialized from
+examples every day. By comparison, the traditional LEM trains
+                                                                                  a pre-trained LLM checkpoint, but bypasses the CPT stage.
+on several billion examples per day. This sample efficiency also
+                                                                                • CR1: CPT (random init) + retrieval SFT. The model train-
+makes these models practical for production use, while training
+                                                                                  ing follows the two PLUM training stages, but the model
+cost per example is much larger. Compared to the LEM, the 900M
+                                                                                  used in CPT is randomly initialized.
+MoE model uses < 0.55x flops to train.
+                                                                                • CR2: CPT (LLM init) + retrieval SFT. This represents the
+                                                                                  full and intended implementation of our proposed frame-
+3.2     Semantic IDs Ablation Study
+                                                                                  work.
+In Table 4 we discuss the importance of different changes we intro-
+duced to the prior SID [23]. We refer to the prior work as SIDv1,       3.3.2     Experiment Results.
+and refer to our proposed method as SIDv2 in the table. Since each
+                                                                           Impact of Continued Pre-training. The main results are summa-
+SID model will result in a different indexing structure, we report
+                                                                        rized in Table 5. Following the scaling study, the performance of
+the index uniqueness depicting how many videos in the corpus are
+                                                                        each of the four models is evaluated on a large, held-out next day
+uniquely represented in the SID space along with the final Video
+                                                                        dataset, and we report recall@10 as the retrieval metric. There is a
+Recall@10 after training a GenRetrieval model on the SID. The
+                                                                        large performance gap between R1 and CR1 (or R2 and CR2), show-
+Video Recall@K is determined by calculating the recall of success-
+                                                                        ing the benefit of CPT for retrieval fine-tuning. Furthermore, Figure
+fully retrieving a specific video given PLUM’s top K SID predictions.
+                                                                        3 shows the 8-th day recall@10 and the training loss against train-
+When an SID maps to multiple videos, we randomly sample a video
+                                                                        ing steps. It’s clear to see that the models with CPT can converge
+when computing the recall metric.
+                                                                        much faster. Therefore, CPT can benefit the training efficiency of
+    We conducted ablation experiments to the SIDv2 changes in a
+                                                                        task-specific fine-tuning, especially when multiple downstream
+simple setting with a 900M MoE PLUM retrieval model without
+                                                                        tasks share the same CPT model.
+CPT and removed watch history in the prompt. As shown in Table 4
+, these experiments assessed both the uniqueness of Semantic ID
+                                                                        Table 5: Main generative retrieval performance of the four
+and downstream generative retrieval VID Recall@10. Results show
+                                                                        model configurations.
+that all changes improve generative item retrieval recall. Notably,
+incorporating a Co-occurrence alignment task greatly improved
+both Semantic ID uniqueness and recall.                                         Model              Pre-trained   CPT          Recall@10
+                                                                                                   LLM                        (8th-day)
+3.3     Impact of Continued Pre-training                                        R1                 No            No               0.19
+To measure the importance of the continued pre-training phase, we               R2                 Yes           No               0.23
+evaluate its impact on the training efficiency and retrieval perfor-
+                                                                                CR1                No            Yes              0.27
+mance of the end models for generative retrieval.
+                                                                                CR2                Yes           Yes              0.28
+3.3.1 Experiment Setup. Our training methodology contains two
+stages: continued pre-training and generative retrieval fine-tuning,
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+
+
+                               Figure 3: 8-th Day Recall@10 and training loss vs retrieval SFT training step.
+
+
+   Impact of Pre-trained LLM. Now we look into the benefits of train-                employing a downsampling mechanism based on user engagement
+ing from a general-purpose LLM versus training from a randomly                       and satisfaction signals. SID tokens of the next watch are used
+initialized state. A consistent pattern emerges from the results in                  as the prediction targets. We randomly shuffle 7 continuous days
+Table 5: models initialized from a pre-trained LLM consistently                      (from July 2025) of data for training. Evaluation is performed on
+outperform their random initialized counterparts with or without                     the subsequent day (Day 8). Our experiments were conducted with
+CPT. We hypothesize that this advantage stems primarily from the                     1,024 Google’s v6e Tensor Processing Units (TPUs) each with 32GB
+pre-trained LLM’s pre-existing understanding of natural language,                    High Bandwidth Memory (HBM). We run 4 trainers in parallel each
+or the general sequence processing capability learned through mas-                   taking 256 TPUs.
+sive LLM pre-training is directly useful for recommendation. A
+                                                                                        Hyperparameter Selection. We conducted a pilot study using the
+further study of this observation is out of this paper’s scope.
+                                                                                     MoE-900M model to determine the model’s sensitivity to global
+                                                                                     batch size and learning rates (see Appendix A.1 for details). Based
+3.4     Scaling Study                                                                on the learnings from this pilot study, in each case we set the batch
+In this section, we conduct a scaling study for generative retrieval                 size to approximately saturate the HBM since it indicates larger
+models with YouTube production data. We use four different sizes                     batch sizes are preferable. For learning rate, using 5 × 10−5 for MoE-
+from the Gemini-1.5 [26] Mixture-of-Experts (MoE) model family:                      900M as the anchor point, we use slightly larger learning rates for
+MoE-110M, MoE-370M, MoE-900M, and MoE-3B (here the size                              smaller models (and vice versa) based on our best guess. Note that
+indicates the number of activated parameters per token) with their                   unlike scaling law studies in natural language processing (e.g., [11]),
+total number of parameters spanning from less than 1B to more                        we employ constant learning rates. This approach is preferred for
+than 10B. In particular, we aim to answer: (1) How does loss scale                   two reasons: (1) continuous training in production models does not
+with different model size and compute? (2) How does retrieval                        involve a specific stopping step number, and (2) constant learning
+metric scale with different model size and compute? (3) What is the                  rates allow for perfect and precise interpolation of all intermediate
+best model size for different compute budgets?                                       data points throughout the training process. Hyperparameters of
+                                                                                     different model sizes are summarized in Table 6. All models are
+3.4.1   Experiment Setup.
+                                                                                     warm-started from their corresponding Continued Pre-training
+   Dataset. Our study was conducted on a production dataset sourced                  checkpoints (all with Iso-FLOPS 1 × 1022 ). Continued Pre-training
+from a key YouTube surface recommending what videos to watch                         training FLOPs are excluded from all FLOPs numbers in this section.
+next given a current watched video and other contextual signals like
+watch history (see Figure 4 in [38]). Here the recommender system                              Table 6: Scaling Law Study Configurations.
+employs a multi-stage architecture, encompassing candidate gen-
+eration, pre-ranking, and ranking, among other phases. Our study                             Model Size     Learning Rate         Global Batch Size
+centers on the candidate generation stage, evaluating retrieval per-
+                                                                                             MoE-110M           1 × 10−4                 25,600
+formance against a comprehensive video corpus containing billions
+                                                                                             MoE-370M           7 × 10−5                 15,360
+of videos.
+                                                                                             MoE-900M           5 × 10−5                  7,680
+   Training and Evaluation. Our input prompt has the following                               MoE-3B             2 × 10−5                  3,584
+format: “watch history | user features | context video features",
+where watch history is a chronological sequence of watches, each
+                                                                                     3.4.2   Experiment Results.
+represented by the concatenation of SID tokens, and other feature
+tokens. For this study, input sequence length is fixed at 1,536 tokens,                 Loss Scaling with Compute and Model Size. Figure 4 displays the
+which can cover roughly 100 most recent watches along with other                     correlation between training/evaluation loss (on day 8) and train-
+features. SFT labels are selected using the next watch on YouTube                    ing Iso-FLOPS. Figure 4a reveals a distinct power-law correlation
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                   He et al.
+
+
+between Iso-FLOPS and training loss for each model size. As Iso-           constant learning rate for each model enables us to directly assess
+FLOPS increase, the optimal model size, representing the training          the model performance at each Iso-FLOPS budget using a single
+loss frontier, progressively shifts. This shift begins with MoE-110M       run. Similar to the Chinchilla paper [11], in Figure 6b there is a
+(red line), moves to MoE-370M (green line), then to MoE-900M               peak for most of the Iso-FLOPS budgets we consider.
+(purple line), and is hypothesized to eventually reach MoE-3B (blue
+line). Figure 4b illustrates that there is also a power-law correlation
+between Iso-FLOPS and evaluation loss for each model size before
+it finally begins to saturate, which we attribute to our extensive
+training. We also observe that the evaluation loss frontier shifts
+toward larger models significantly sooner than the training loss,
+suggesting that larger models exhibit superior generalization to
+future data distributions.
+
+
+                                                                           (a) Training loss for Fixed (b) Eval Recall@10 for Fixed Compute
+                                                                           Compute Budget.             Budget.
+
+                                                                           Figure 6: Iso-FLOPS curves. We evaluate training loss and
+                                                                           evaluation Recall@10 at various fixed Iso-FLOPS budgets,
+                                                                           selecting the appropriate number of steps for each model
+                                                                           size.
+ (a) Iso-FLOPS v.s. training loss.         (b) Iso-FLOPS v.s. eval loss.
+
+Figure 4: Training and evaluation loss variation as we scale
+                                                                           3.4.3 Limitation Discussion. We note that the MoE-3B model did
+up training Iso-FLOPS.
+                                                                           not outperform the MoE-900M model for the compute budgets we
+                                                                           considered. Our scaling study is constrained by compute resource.
+                                                                           The suboptimal hyperparameter setup might be a significant con-
+    Retrieval Metric Scaling with Compute and Model Size. Similarly,
+                                                                           tributing factor. For instance, our pilot study indicates a correlation
+in Figure 5 we report the relationship between training/evaluation
+                                                                           between larger batch sizes and increased training efficiency for
+Recall@10 (on day 8) and training Iso-FLOPS, with both axes pre-
+                                                                           the same model size. Since we allocate the same training resources
+sented on a logarithmic scale. The findings are similar to those in
+                                                                           for each model size, using a batch size that saturates the HBMs
+Figure 4, except that in Figure 5 the evaluation Recall@10 shows
+                                                                           (see Table 6), larger models may be at a disadvantage due to their
+fewer signs of slowing down to increase, suggesting that model
+                                                                           consequently smaller batch sizes. Indeed, at the end of training,
+keeps improving the generation of accurate and complete sequences
+                                                                           the MoE-3B model has only processed 0.57 epochs of training data
+that lead to correct document. Additionally, the three smaller mod-
+                                                                           (about 5B examples), a more than 2x gap from the second largest
+els have processed more than one epoch of data, with MoE-110M
+                                                                           model. Our scaling study on the generative retrieval task reveals
+trained as many as 4.24 epochs but still showing no signs of over-
+                                                                           that compute-optimal training requires a synchronized scaling of
+fitting (see Figure 5b).
+                                                                           both training examples and model size.
+
+                                                                           4   Conclusion and Future Work
+                                                                           We introduced PLUM, a framework for adapting pre-trained LLMs
+                                                                           for large-scale recommendation tasks. Our method enhances item
+                                                                           tokenization with SIDv2, uses a large-scale continued pre-training
+                                                                           stage to align the LLM with user behavior and ground SIDs in text,
+                                                                           followed by a supervised fine-tuning stage to make the model excel
+                                                                           at generative retrieval.
+(a) Iso-FLOPS v.s. training Re- (b) Iso-FLOPS v.s. eval Recall@10.            As a launched platform in YouTube, PLUM is able to add unique
+call@10.                                                                   value to the current system, while being our first neural model built
+                                                                           without large embedding tables. Our ablations validate the value of
+Figure 5: Training and evaluation Recall@10 variation as we                the CPT stage, the benefit of initializing from a pre-trained LLM, and
+scale up training Iso-FLOPS.                                               our proposed SID techniques. This paper is a preliminary study on
+                                                                           aligning LLMs with real-world recommendation systems, opening
+                                                                           future research directions such as applying the PLUM framework
+   Optimal Model Size for Fixed Iso-FLOPS Budgets. In Figure 6, we         to other tasks like ranking and personalized search, developing new
+demonstrate the gradual shifts of optimal model size to larger ones        decoding strategies for candidate diversity, and enabling seamless
+as we increase the given Iso-FLOPS budgets. Note that our use of           generation of SIDs and natural languages.
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                         Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+5    Acknowledgements                                                                     [11] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya,
+                                                                                               Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes
+We would like to thank the following for their efforts and feed-                               Welbl, Aidan Clark, et al. 2022. Training compute-optimal large language models.
+back in the application of the techniques described in this paper                              arXiv preprint arXiv:2203.15556 (2022).
+                                                                                          [12] Yupeng Hou, Junjie Zhang, Zihan Lin, Hongyu Lu, Ruobing Xie, Julian McAuley,
+to a diverse set of surfaces and use cases (alphabetical order): Sak-                          and Wayne Xin Zhao. 2024. Large Language Models are Zero-Shot Rankers for
+sham Agarwal, Sriraj Badam, Sourabh Bansod, Xilun Chen, Yi Chen,                               Recommender Systems. Springer-Verlag, Berlin, Heidelberg, 364–381. doi:10.
+Bernardo Cunha, Onkar Dalal, Mingyan Gao, Elad Ganmor, Dan-                                    1007/978-3-031-56060-6_24
+                                                                                          [13] Yanhua Huang, Yuqi Chen, Xiong Cao, Rui Yang, Mingliang Qi, Yinghao Zhu,
+feng Guo, Pooja Gupta, Ralf Gutsche, Yuan Hao, Chuan He, Lily                                  Qingchang Han, Yaowei Liu, Zhaoyu Liu, Xuefeng Yao, Yuting Jia, Leilei Ma, Yinqi
+He, Yan Huang, Kate Jones, Jiewen Lang, Pengfei Li, Wen Li, Li                                 Zhang, Taoyu Zhu, Liujie Zhang, Lei Chen, Weihang Chen, Min Zhu, Ruiwen
+Wei, Sean Liew, Qiguang Liu, Sunny Liu, Yang Liu, Jianan Lu, Yi-                               Xu, and Lei Zhang. 2025. Towards Large-scale Generative Ranking. (2025).
+                                                                                               arXiv:2505.04180 [cs.IR] https://arxiv.org/abs/2505.04180
+long Luan, Shifan Mao, Tomer Margolin, Radwa Metwali, Aniruddh                            [14] Clark Mingxuan Ju, Liam Collins, Leonardo Neves, Bhuvesh Kumar, Louis Yufeng
+Nath, Hardik Patel, Amy Pu, Vasin Punyakanok, Murphy Ren, Yuji                                 Wang, Tong Zhao, and Neil Shah. 2025. Generative Recommendation with
+                                                                                               Semantic IDs: A Practitioner’s Handbook. (2025). arXiv:2507.22224 [cs.IR]
+Roh, Yuan Shao, Ajay Shekhawat, Fabio Soldo, Yanwei Song, Qian                                 https://arxiv.org/abs/2507.22224
+Sun, Jiaxi Tang, Aahan Tyagi, Diego Uribe, Jacky Wang, Ting Wang,                         [15] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Recom-
+Siqi Wu, Bo Yan, Shuhao Ye, Likang Yin, Qiao Zhang, Rein Zhang,                                mendation. arXiv:1808.09781 [cs.IR] https://arxiv.org/abs/1808.09781
+                                                                                          [16] Kaiyuan Li, Rui Xiang, Yong Bai, Yongxiang Tang, Yanhua Cheng, Xialong Liu,
+Sai Zhang, Vivian Zhang, Yaping Zhang, Gwendolyn Zhao, Zelong                                  Peng Jiang, and Kun Gai. 2025. BBQRec: Behavior-Bind Quantization for Multi-
+Zhao, Zhile Zou, Dav Zimak. We also thank Mahesh Sathiamoorthy                                 Modal Sequential Recommendation. (2025). arXiv:2504.06636 [cs.IR] https:
+and Anima Singh for their profound contributions to the conceptu-                              //arxiv.org/abs/2504.06636
+                                                                                          [17] Zhuoran Liu, Leqi Zou, Xuan Zou, Caihua Wang, Biao Zhang, Da Tang,
+alization and initial development of this project.                                             Bolin Zhu, Yijie Zhu, Peng Wu, Ke Wang, and Youlong Cheng. 2022. Mono-
+                                                                                               lith: Real Time Recommendation System With Collisionless Embedding Table.
+                                                                                               arXiv:2209.07663 [cs.IR] https://arxiv.org/abs/2209.07663
+References                                                                                [18] M. Jeffrey Mei, Florian Henkel, Samuel E. Sandberg, Oliver Bembom, and An-
+ [1] Yuwei Cao, Nikhil Mehta, Xinyang Yi, Raghunandan Keshavan, Lukasz Heldt,                  dreas F. Ehmann. 2025. Semantic IDs for Music Recommendation. arXiv preprint
+     Lichan Hong, Ed H. Chi, and Maheswaran Sathiamoorthy. 2024. Align-                        arXiv:2507.18800 (2025). arXiv:2507.18800 [cs.IR]
+     ing Large Language Models with Recommendation Knowledge. (2024).                     [19] Maxim Naumov, Dheevatsa Mudigere, Hao-Jun Michael Shi, Jianyu Huang,
+     arXiv:2404.00245 [cs.IR] https://arxiv.org/abs/2404.00245                                 Narayanan Sundaraman, Jongsoo Park, Xiaodong Wang, Udit Gupta, Carole-Jean
+ [2] Minmin Chen, Alex Beutel, Paul Covington, Sagar Jain, Francois Belletti, and Ed H.        Wu, Alisson G. Azzolini, Dmytro Dzhulgakov, Andrey Mallevich, Ilia Cherni-
+     Chi. 2019. Top-K Off-Policy Correction for a REINFORCE Recommender System.                avskii, Yinghai Lu, Raghuraman Krishnamoorthi, Ansha Yu, Volodymyr Kon-
+     In Proceedings of the Twelfth ACM International Conference on Web Search and              dratenko, Stephanie Pereira, Xianjie Chen, Wenlin Chen, Vijay Rao, Bill Jia, Liang
+     Data Mining (Melbourne VIC, Australia) (WSDM ’19). Association for Computing              Xiong, and Misha Smelyanskiy. 2019. Deep Learning Recommendation Model for
+     Machinery, New York, NY, USA, 456–464. doi:10.1145/3289600.3290999                        Personalization and Recommendation Systems. (2019). arXiv:1906.00091 [cs.IR]
+ [3] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019. Behavior                  https://arxiv.org/abs/1906.00091
+     sequence transformer for e-commerce recommendation in Alibaba. In Proceedings        [20] Netflix. 2024.          Foundation Model for Personalized Recommenda-
+     of the 1st International Workshop on Deep Learning Practice for High-Dimensional          tion.          https://netflixtechblog.com/foundation-model-for-personalized-
+     Sparse Data (Anchorage, Alaska) (DLP-KDD ’19). Association for Computing                  recommendation-1a0bd8e02d39.
+     Machinery, New York, NY, USA, Article 12, 4 pages. doi:10.1145/3326937.3341261       [21] Ming Pang, Chunyuan Yuan, Xiaoyu He, Zheng Fang, Donghao Xie, Fanyi Qu,
+ [4] Xiangyi Chen, Kousik Rajesh, Matthew Lawhon, Zelun Wang, Hanyu Li, Hao-                   Xue Jiang, Changping Peng, Zhangang Lin, Zheng Luo, and Jingping Shao. 2025.
+     miao Li, Saurabh Vishwas Joshi, Pong Eksombatchai, Jaewon Yang, Yi-Ping                   Generative Retrieval and Alignment Model: A New Paradigm for E-commerce
+     Hsu, Jiajing Xu, and Charles Rosenberg. 2025. PinFM: Foundation Model for                 Retrieval. In Companion Proceedings of the ACM on Web Conference 2025 (Sydney
+     User Activity Sequences at a Billion-scale Visual Discovery Platform. (2025).             NSW, Australia) (WWW ’25). Association for Computing Machinery, New York,
+     arXiv:2507.12704 [cs.LG] https://arxiv.org/abs/2507.12704                                 NY, USA, 413–421. doi:10.1145/3701716.3715228
+ [5] Benjamin Coleman, Wang-Cheng Kang, Matthew Fahrbach, Ruoxi Wang, Lichan              [22] Gustavo Penha, Edoardo D’Amico, Marco De Nadai, Enrico Palumbo, Alexandre
+     Hong, Ed H. Chi, and Derek Zhiyuan Cheng. 2023. Unified embedding: battle-                Tamborrino, Ali Vardasbi, Max Lefarov, Shawn Lin, Timothy Heath, Francesco
+     tested feature representations for web-scale ML systems. In Proceedings of the            Fabbri, and Hugues Bouchard. 2025. Semantic IDs for Joint Generative Search
+     37th International Conference on Neural Information Processing Systems (New               and Recommendation. (2025). arXiv:2508.10478 [cs.IR] https://arxiv.org/abs/
+     Orleans, LA, USA) (NIPS ’23). Curran Associates Inc., Red Hook, NY, USA, Article          2508.10478
+     2453, 22 pages.                                                                      [23] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Keshavan, Trung
+ [6] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep Neural Networks                    Vu, Lukasz Heidt, Lichan Hong, Yi Tay, Vinh Q. Tran, Jonah Samost, Maciej
+     for YouTube Recommendations. In Proceedings of the 10th ACM Conference on                 Kula, Ed H. Chi, and Maheswaran Sathiamoorthy. 2023. Recommender systems
+     Recommender Systems (Boston, Massachusetts, USA) (RecSys ’16). Association                with generative retrieval. In Proceedings of the 37th International Conference on
+     for Computing Machinery, New York, NY, USA, 191–198. doi:10.1145/2959100.                 Neural Information Processing Systems (New Orleans, LA, USA) (NIPS ’23). Curran
+     2959190                                                                                   Associates Inc., Red Hook, NY, USA, Article 452, 17 pages.
+ [7] Hamed Firooz, Maziar Sanjabi, Adrian Englhardt, Aman Gupta, Ben Levine,              [24] Anima Singh, Trung Vu, Nikhil Mehta, Raghunandan Keshavan, Maheswaran
+     Dre Olgiati, Gungor Polatkan, Iuliia Melnychuk, Karthik Ramgopal, Kirill Tala-            Sathiamoorthy, Yilin Zheng, Lichan Hong, Lukasz Heldt, Li Wei, Devansh Tandon,
+     nine, Kutta Srinivasan, Luke Simon, Natesh Sivasubramoniapillai, Necip Fazil              Ed Chi, and Xinyang Yi. 2024. Better Generalization with Semantic IDs: A
+     Ayan, Qingquan Song, Samira Sriram, Souvik Ghosh, Tao Song, Vignesh Kotha-                Case Study in Ranking for Recommendations. In Proceedings of the 18th ACM
+     palli, Xiaoling Zhai, Ya Xu, Yu Wang, and Yun Dai. 2025. 360Brew: A Decoder-              Conference on Recommender Systems (Bari, Italy) (RecSys ’24). Association for
+     only Foundation Model for Personalized Ranking and Recommendation. (2025).                Computing Machinery, New York, NY, USA.
+     arXiv:2501.16450 [cs.IR] https://arxiv.org/abs/2501.16450                            [25] Yi Tay, Vinh Q. Tran, Mostafa Dehghani, Jianmo Ni, Dara Bahri, Harsh Mehta,
+ [8] Yulong Gu, Zhuoye Ding, Shuaiqiang Wang, Lixin Zou, Yiding Liu, and Dawei                 Zhen Qin, Kai Hui, Zhe Zhao, Jai Gupta, Tal Schuster, William W. Cohen, and
+     Yin. 2020. Deep Multifaceted Transformers for Multi-objective Ranking in Large-           Donald Metzler. 2022. Transformer memory as a differentiable search index. In
+     Scale E-commerce Recommender Systems. In Proceedings of the 29th ACM In-                  Proceedings of the 36th International Conference on Neural Information Processing
+     ternational Conference on Information & Knowledge Management (Virtual Event,              Systems (New Orleans, LA, USA) (NIPS ’22). Curran Associates Inc., Red Hook,
+     Ireland) (CIKM ’20). Association for Computing Machinery, New York, NY, USA,              NY, USA, Article 1587, 13 pages.
+     2493–2500. doi:10.1145/3340531.3412697                                               [26] Gemini Team. 2024. Gemini 1.5: Unlocking multimodal understanding across
+ [9] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma,                millions of tokens of context. arXiv preprint arXiv:2403.05530 (2024).
+     Mincong Huang, Xiaoguang Li, Chunzhen Jing, Yueming Han, Menglei Zhou,               [27] Dongsheng Wang, Yuxi Huang, Shen Gao, Yifan Wang, Chengrui Huang, and
+     Lei Yu, Chuan Liu, and Wei Lin. 2025. MTGR: Industrial-Scale Generative Rec-              Shuo Shang. 2025. Generative Next POI Recommendation with Semantic ID.
+     ommendation Framework in Meituan. (05 2025). doi:10.48550/arXiv.2505.18654                (2025). arXiv:2506.01375 [cs.IR] https://arxiv.org/abs/2506.01375
+[10] Balázs Hidasi, Alexandros Karatzoglou, Linas Baltrunas, and Domonkos Tikk.           [28] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,
+     2016. Session-based Recommendations with Recurrent Neural Networks.                       and Ed Chi. 2021. DCN V2: Improved Deep & Cross Network and Practical
+     arXiv:1511.06939 [cs.LG] https://arxiv.org/abs/1511.06939                                 Lessons for Web-scale Learning to Rank Systems. In Proceedings of the Web
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                                He et al.
+
+
+     Conference 2021 (Ljubljana, Slovenia) (WWW ’21). Association for Computing         and learning rates. The outcomes of this pilot will inform the hy-
+     Machinery, New York, NY, USA, 1785–1797. doi:10.1145/3442381.3450078               perparameter selection for the subsequent, more extensive scaling
+[29] Orion Weller, Michael Boratko, Iftekhar Naim, and Jinhyuk Lee. 2025. On the
+     Theoretical Limitations of Embedding-Based Retrieval. arXiv:2508.21038 [cs.IR]     analysis, ensuring computational resources are utilized effectively.
+     https://arxiv.org/abs/2508.21038
+[30] Yi Xu, Moyu Zhang, Chenxuan Li, Zhihao Liao, Haibo Xing, Hao Deng, Jinxin          A.1.1 Experiment Setup. We ran four trainers each with 256 TPUs
+     Hu, Yu Zhang, Xiaoyi Zeng, and Jing Zhang. 2025. MMQ: Multimodal Mixture-          and initialized from the (same) pre-trained checkpoint. The pilot ran
+     of-Quantization Tokenization for Semantic ID Generation and User Behavioral
+     Adaptation. (2025). arXiv:2508.15281 [cs.IR] https://arxiv.org/abs/2508.15281
+                                                                                        for approximately two weeks, a period sufficient to establish clear
+[31] Liu Yang, Fabian Paischer, Kaveh Hassani, Jiacheng Li, Shuai Shao, Zhang Gabriel   performance trends. The “base setup" (Trainer A) uses a constant
+     Li, Yun He, Xue Feng, Nima Noorshams, Sem Park, Bo Long, Robert D Nowak,           learning rate of 1 × 10−4 and a batch size that saturates the available
+     Xiaoli Gao, and Hamid Eghbalzadeh. 2024. Unifying Generative and Dense
+     Retrieval for Sequential Recommendation. (2024). arXiv:2411.18814 [cs.IR]          HBM. The other configurations systematically vary one of these
+     https://arxiv.org/abs/2411.18814                                                   two hyperparameters.
+[32] Yuhao Yang, Zhi Ji, Zhaopeng Li, Yi Li, Zhonglin Mo, Yue Ding, Kai Chen, Zijian
+     Zhang, Jie Li, Shuanglong Li, and Lin Liu. 2025. Sparse Meets Dense: Unified
+     Generative Recommendations with Cascaded Sparse-Dense Representations.                 Table 7: Pilot Study Configurations with MoE-900M.
+     (2025). arXiv:2503.02453 [cs.IR] https://arxiv.org/abs/2503.02453
+[33] Yining Yao, Ziwei Li, Shuwen Xiao, Boya Du, Jialin Zhu, Junjun Zheng, Xiangheng
+     Kong, and Yuning Jiang. 2025. SaviorRec: Semantic-Behavior Alignment for Cold-              Trainer     Learning Rate       Batch Size
+     Start Recommendation. (2025). arXiv:2508.01375 [cs.IR] https://arxiv.org/abs/
+     2508.01375                                                                                  A (Base)        1 × 10−4        Saturate HBM
+[34] Wencai Ye, Mingjie Sun, Shaoyun Shi, Peng Wang, Wenjin Wu, and Peng Jiang.                  B               1 × 10−4        0.5x Saturate HBM
+     2025. DAS: Dual-Aligned Semantic IDs Empowered Industrial Recommender
+     System. (2025). arXiv:2508.10584 [cs.IR] https://arxiv.org/abs/2508.10584                   C               2 × 10−4        Saturate HBM
+[35] Xinyang Yi, Ji Yang, Lichan Hong, Derek Zhiyuan Cheng, Lukasz Heldt, Aditee                 D               5 × 10−5        Saturate HBM
+     Kumthekar, Zhe Zhao, Li Wei, and Ed Chi. 2019. Sampling-bias-corrected neural
+     modeling for large corpus item recommendations. In Proceedings of the 13th
+     ACM Conference on Recommender Systems (Copenhagen, Denmark) (RecSys ’19).
+     Association for Computing Machinery, New York, NY, USA, 269–277. doi:10.           A.1.2   Results.
+     1145/3298689.3346996
+[36] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao,            Learning Rate Sensitivity. The results indicate that the training
+     Zhaojie Gong, Fangda Gu, Jiayuan He, Yinghai Lu, and Yu Shi. 2024. Actions
+     Speak Louder than Words: Trillion-Parameter Sequential Transducers for Gen-        process is tolerant of different learning rates within a reasonable
+     erative Recommendations. In Proceedings of the 41st International Conference       range. Specifically, the performance difference between the base
+     on Machine Learning (Proceedings of Machine Learning Research, Vol. 235), Rus-     learning rate of 1 × 10−4 (Trainer A) and the lower rate of 5 × 10−5
+     lan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver,
+     Jonathan Scarlett, and Felix Berkenkamp (Eds.). PMLR, 58484–58509. https:          (Trainer D) was not statistically significant within the duration of
+     //proceedings.mlr.press/v235/zhai24a.html                                          the pilot study. However, doubling the learning rate to 2 × 10−4
+[37] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Daifeng Guo, Yanli Zhao,
+     Shen Li, Yuchen Hao, Yantao Yao, Guna Lakshminarayanan, Ellie Dingqiao Wen,
+                                                                                        (Trainer C) resulted in substantially worse performance, indicating
+     Jongsoo Park, Maxim Naumov, and Wenlin Chen. 2024. Wukong: Towards a               that this rate is likely outside the optimal range for this model and
+     Scaling Law for Large-Scale Recommendation. (2024). arXiv:2403.02545 [cs.LG]       dataset.
+     https://arxiv.org/abs/2403.02545
+[38] Zhe Zhao, Lichan Hong, Li Wei, Jilin Chen, Aniruddh Nath, Shawn Andrews,              Batch Size Sensitivity. Using a smaller batch size harms training
+     Aditee Kumthekar, Maheswaran Sathiamoorthy, Xinyang Yi, and Ed Chi. 2019.
+     Recommending what video to watch next: a multitask ranking system. In Pro-         efficiency. Halving the batch size requires more than double the
+     ceedings of the 13th ACM Conference on Recommender Systems (Copenhagen,            training steps to achieve a comparable level of performance. This
+     Denmark) (RecSys ’19).                                                             highlights the importance of maximizing batch size to the limits of
+[39] Carolina Zheng, Minhui Huang, Dmitrii Pedchenko, Kaushik Rangadurai, Siyu
+     Wang, Gaby Nahum, Jie Lei, Yang Yang, Tao Liu, Zutian Luo, Xiaohan Wei,            hardware memory for compute optimal training.
+     Dinesh Ramasamy, Jiyan Yang, Yiping Han, Lin Yang, Hangjun Xu, Rong Jin,
+     and Shuang Yang. 2025. Enhancing Embedding Representation Stability in             A.2     In-context Learning Examples
+     Recommendation Systems with Semantic ID. (2025). arXiv:2504.02137 [cs.IR]
+     https://arxiv.org/abs/2504.02137                                                   Table 8 shows a few examples to demonstrate the in-context learn-
+[40] Guorui Zhou, Jiaxin Deng, Jinghao Zhang, Kuo Cai, Lejian Ren, Qiang Luo,
+     Qianqian Wang, Qigen Hu, Rui Huang, Shiyao Wang, Weifeng Ding, Wuchao Li,
+                                                                                        ing capability of the model after CPT with Semantic IDs. The CPT
+     Xinchen Luo, Xingmei Wang, Zexuan Cheng, Zixing Zhang, Bin Zhang, Boxuan           model based on pre-trained LLM was able to correctly complete
+     Wang, Chaoyi Ma, Chengru Song, Chenhui Wang, Di Wang, Dongxue Meng, Fan            the sentence with a semantically appropriate phrase, by following
+     Yang, Fangyu Zhang, Feng Jiang, Fuxing Zhang, Gang Wang, Guowang Zhang,
+     Han Li, Hengrui Hu, Hezheng Lin, Hongtao Cheng, Hongyang Cao, Huanjie              the few-shot task description. In contrast, if we apply the same recs
+     Wang, Jiaming Huang, Jiapeng Chen, Jiaqiang Liu, Jinghui Jia, Kun Gai, Lantao      pre-training on a randomly-initialized model, the model struggled
+     Hu, Liang Zeng, Liao Yu, Qiang Wang, Qidong Zhou, Shengzhe Wang, Shihui He,        to form a coherent phrase and made distinction between SID and
+     Shuang Yang, Shujie Yang, Sui Huang, Tao Wu, Tiantian He, Tingting Gao, Wei
+     Yuan, Xiao Liang, Xiaoxiao Xu, Xugang Liu, Yan Wang, Yi Wang, Yiwu Liu, Yue        text tokens.
+     Song, Yufei Zhang, Yunfan Wu, Yunfeng Zhao, and Zhanyu Liu. 2025. OneRec
+     Technical Report. arXiv:2506.13695 [cs.IR] https://arxiv.org/abs/2506.13695
+
+
+
+
+A Appendix
+A.1 Scaling Pilot Study
+As a precursor to our scaling study, we conducted a pilot study
+using the MoE-900M model. The goal of this pilot is to determine
+the model’s sensitivity to two hyperparameters: global batch size
+PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations                      Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+                                                                           (a) Example 1
+
+
+
+
+  Video Thumbnail
+  Few-shot Input                                      The video A1991 ... H10 is about health and pain management.
+                                                      The video A364 ... H37 is about the basics of quantum physics.
+                                                      The video A37 ... H25 is about
+  LLM-Initialized CPT Output                          psychology and mind
+  Randomly-Initialized CPT Output                     100% video A252 H7
+
+
+                                                                           (b) Example 2
+
+
+
+
+  Video Thumbnail
+  Few-shot Input                                      Video A37 ... H41 answers the question: do you really need 8 hours of sleep?
+                                                      Video A1926 ... H8 answers the question: how buy-now pay-later loan business makes profit?
+                                                      Video A1882 ... H32 answers the question:
+  LLM-Initialized CPT Output                          the impact of language in your life.
+  Randomly-Initialized CPT Output                     - - - 100% -1999-11-16
+Table 8: Qualitative examples of few-shot, in-context learning example. Each table shows the text-based prompt and model’s
+output from two different initializations. The thumbnails (top) show the visual content for each corresponding Semantic ID in
+the prompt.
+

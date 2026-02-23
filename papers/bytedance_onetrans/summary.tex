@@ -1,0 +1,57 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\begin{document}
+
+\section*{OneTrans: Unified Feature Interaction and Sequence Modeling with One Transformer in Industrial Recommender (ByteDance, 2025)}
+
+\subsection*{Challenges}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Fragmented scaling: sequence modeling vs. feature interaction.} Prior industrial ranking stacks typically follow an ``encode-then-interaction pipeline'' where user behavior sequences are compressed first and cross features are modeled later, which ``hinders bidirectional information exchange'' and prevents unified scaling/optimization.
+  \item \textbf{Latency and execution fragmentation.} Splitting modules limits reuse of LLM-style serving optimizations (e.g., KV caching, memory-efficient attention, mixed precision), increasing end-to-end latency.
+  \item \textbf{Heterogeneous feature types.} Ranking inputs mix homogeneous sequential behavior events with heterogeneous non-sequential (user/item/context) features, creating stability and parameter-allocation challenges.
+\end{itemize}
+
+\subsection*{Key Initiatives (Core Contributions)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Unified Transformer backbone (OneTrans).} A single Transformer-style stack that \emph{jointly} performs user behavior sequence modeling and non-sequential feature interaction.
+  \item \textbf{Unified tokenizer.} Converts sequential features (S) and non-sequential features (NS) into one token sequence, inserting learnable \texttt{[SEP]} tokens between behavior sequences.
+  \item \textbf{Mixed parameterization.} Sequential tokens share one set of QKV/FFN weights while each non-sequential token receives token-specific QKV/FFN, bridging RecSys heterogeneity with Transformer computation.
+  \item \textbf{Efficiency mechanisms: pyramid + cross-request KV caching.} Pyramid stacking progressively prunes sequential query tokens; cross-request KV caching amortizes user-side computation across candidates and across requests.
+  \item \textbf{Scaling + online impact.} Industrial-scale results show efficient scaling and statistically significant online business lifts, including a headline ``5.68\% lift in per-user GMV''.
+\end{itemize}
+
+\subsection*{Methodology}
+\paragraph{System Architecture (Figure 2)}
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{fig2_system_architecture.png}
+  \caption{System architecture (from OneTrans paper, Figure 2): unified tokenizer + pyramid stack + mixed parameterization.}
+\end{figure}
+
+\paragraph{Problem setup}
+The paper focuses on the industrial \textbf{ranking stage} in a cascaded recommender. The model predicts CTR/CVR for each user--candidate pair based on (i) multi-behavior sequential histories and (ii) non-sequential user/item/context features.
+
+\paragraph{OneTrans block}
+A pre-norm causal Transformer block with RMSNorm, Mixed Causal Attention, and Mixed FFN. A unified causal mask enables NS-tokens to attend over the full S-token history while maintaining efficient Transformer-style execution.
+
+\subsection*{Experiments (key numbers)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Dataset scale (Table 1).} 29.1B impressions, 27.9M users, 10.2M items.
+  \item \textbf{Offline effectiveness vs. strong baselines (Table 2).} Compared to a production baseline DCNv2+DIN, OneTransL (default) reports improvements of \textbf{+1.53\%/+2.79\%} CTR AUC/UAUC and \textbf{+1.14\%/+3.23\%} CVR AUC/UAUC (relative).
+  \item \textbf{Systems efficiency ablations (Table 4).} Adding pyramid stack and KV caching yields large training/runtime and inference/latency reductions; mixed precision with recomputation reports a \textbf{-69.1\%} p99 latency change (relative) vs. the unoptimized OneTransS pipeline.
+  \item \textbf{Online A/B tests (Table 6).} In Feeds: \textbf{+5.685\% GMV/u} (and +7.737\% click/u). In Mall: \textbf{+3.670\% GMV/u}. The abstract highlights a \textbf{5.68\% lift in per-user GMV} online.
+\end{itemize}
+
+\subsection*{References (selected)}
+\begin{itemize}[leftmargin=1.5em]
+  \item Chai et al. (2025). LONGER: Scaling Up Long Sequence Modeling in Industrial Recommenders.
+  \item Wang et al. (2021). DCNv2: Improved Deep \& Cross Network.
+  \item Zhou et al. (2018). DIN: Deep Interest Network.
+  \item Kang \& McAuley (2018). SASRec.
+  \item Dao et al. (2023). FlashAttention-2.
+\end{itemize}
+
+\end{document}

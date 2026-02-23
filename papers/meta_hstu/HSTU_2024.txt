@@ -1,0 +1,1781 @@
+                                        Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers
+                                                             for Generative Recommendations
+
+
+                                                                      Jiaqi Zhai 1 Lucy Liao 1 Xing Liu 1 Yueming Wang 1 Rui Li 1
+                                                                1
+                                                    Xuan Cao         Leon Gao 1 Zhaojie Gong 1 Fangda Gu 1 Michael He 1 Yinghai Lu 1 Yu Shi 1
+
+
+                                                                    Abstract                                                   10000
+arXiv:2402.17152v3 [cs.LG] 6 May 2024
+
+
+
+
+                                             Large-scale recommendation systems are charac-
+
+
+
+
+                                                                                                                      Training PetaFLOP/s-days
+                                             terized by their reliance on high cardinality, het-                                                 100
+                                             erogeneous features and the need to handle tens
+                                             of billions of user actions on a daily basis. De-
+                                             spite being trained on huge volume of data with                                                       1
+
+                                             thousands of features, most Deep Learning Rec-
+                                             ommendation Models (DLRMs) in industry fail to
+                                                                                                                                                 0.01
+                                             scale with compute. Inspired by success achieved
+                                             by Transformers in language and vision domains,
+                                             we revisit fundamental design choices in recom-                                                            2012   2014   2016   2018   2020   2022   2024
+                                                                                                                                                                             Year
+                                             mendation systems. We reformulate recommen-
+                                             dation problems as sequential transduction tasks                 Figure 1. Total compute used to train deep learning models over
+                                                                                                              the years. DLRM results are from (Mudigere et al., 2022); GRs are
+                                             within a generative modeling framework (“Gen-
+                                                                                                              deployed models from this work. DLRMs/GRs are continuously
+                                             erative Recommenders”), and propose a new ar-
+                                                                                                              trained in a streaming setting; we report compute used per year.
+                                             chitecture, HSTU, designed for high cardinality,
+                                             non-stationary streaming recommendation data.                    in personalizing billions of user experiences on a daily basis.
+                                             HSTU outperforms baselines over synthetic and                    State-of-the-art approaches in recommendations have been
+                                             public datasets by up to 65.8% in NDCG, and is                   based on Deep Learning Recommendation Models (DL-
+                                             5.3x to 15.2x faster than FlashAttention2-based                  RMs) (Mudigere et al., 2022) for about a decade (Covington
+                                             Transformers on 8192 length sequences. HSTU-                     et al., 2016; Cheng et al., 2016; Zhou et al., 2018; Tang et al.,
+                                             based Generative Recommenders, with 1.5 trillion                 2020; Wang et al., 2021; Xia et al., 2023). DLRMs are char-
+                                             parameters, improve metrics in online A/B tests                  acterized by their usage of heterogeneous features, such as
+                                             by 12.4% and have been deployed on multiple                      numerical features – counters and ratios, embeddings, and
+                                             surfaces of a large internet platform with billions              categorical features such as creator ids, user ids, etc. Due
+                                             of users. More importantly, the model quality of                 to new content and products being added every minute, the
+                                             Generative Recommenders empirically scales as a                  feature space is of extreme high cardinality, often in the
+                                             power-law of training compute across three orders                range of billions (Eksombatchai et al., 2018). To leverage
+                                             of magnitude, up to GPT-3/LLaMa-2 scale, which                   tens of thousands of such features, DLRMs employ various
+                                             reduces carbon footprint needed for future model                 neural networks to combine features, transform intermediate
+                                             developments, and further paves the way for the                  representations, and compose the final outputs.
+                                             first foundation models in recommendations.                      Despite utilizing extensive human-engineered feature sets
+                                                                                                              and training on vast amounts of data, most DLRMs in in-
+                                        1. Introduction                                                       dustry scale poorly with compute (Zhao et al., 2023). This
+                                        Recommendation systems, quintessential in the realm of on-            limitation is noteworthy and remains unanswered.
+                                        line content platforms and e-commerce, play a pivotal role            Inspired by the success achieved by Transformers in lan-
+                                            1
+                                              MRS, Meta AI. Correspondence to:        <{jiaqiz, lucyyl,
+                                                                                                              guage and vision, we revisit fundamental design choices in
+                                        xingl, yuemingw, ruili}@meta.com>.          Code available at         modern recommendation systems. We observe that alter-
+                                        https://github.com/facebookresearch/generative-recommenders.          native formulations at billion-user scale need to overcome
+                                        Proceedings of the 41 st International Conference on Machine          three challenges. First, features in recommendation systems
+                                        Learning, Vienna, Austria. PMLR 235, 2024. Copyright 2024 by          lack explicit structures. While sequential formulations have
+                                        the author(s).                                                        been explored in small-scale settings (detailed discussions
+
+                                                                                                          1
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+in Appendix B), heterogeneous features, including high                 plex GR models while achieving 1.50x-2.99x speedups, all
+cardinality ids, cross features, counters, ratios, etc. play           with the same inference budget used by traditional DLRMs.
+critical roles in industry-scale DLRMs (Mudigere et al.,
+                                                                       We finally validate the proposed techniques over synthetic
+2022). Second, recommendation systems use billion-scale
+                                                                       datasets, public datasets, and deployments on multiple sur-
+vocabularies that change continuously. A billion-scale dy-
+                                                                       faces of a large internet platform with billions of daily ac-
+namic vocabulary, in contrast to 100K-scale static ones in
+                                                                       tive users in Section 4. To the best of our knowledge, our
+language (Brown et al., 2020), creates training challenges
+                                                                       work represents the first result that shows pure sequential
+and necessitates high inference cost given the need to con-
+                                                                       transduction-based architectures, like HSTU, in generative
+sider tens of thousands of candidates in a target-aware fash-
+                                                                       settings (GRs) to significantly outperform DLRMs in large-
+ion (Zhou et al., 2018; Wang et al., 2020). Finally, com-
+                                                                       scale industrial settings. Remarkably, not only did we over-
+putational cost represents the main bottleneck in enabling
+                                                                       come known scaling bottlenecks in traditional DLRMs, we
+large-scale sequential models. GPT-3 was trained on a total
+                                                                       further succeeded in showing that scaling law (Kaplan et al.,
+of 300B tokens over a period of 1-2 months with thousands
+                                                                       2020) applies to recommendations, representing the poten-
+of GPUs (Brown et al., 2020). This scale appears daunting,
+                                                                       tial ChatGPT moment for recommendation systems.
+until we contrast it with the scale of user actions. The largest
+internet platforms serve billions of daily active users, who
+                                                                       2. Recommendation as Sequential
+engage with billions of posts, images, and videos per day.
+User sequences could be of length up to 105 (Chang et al.,                Transduction Tasks: From DLRMs to GRs
+2023). Consequentially, recommendation systems need to                 2.1. Unifying heterogeneous feature spaces in DLRMs
+handle a few orders of magnitude more tokens per day than
+what language models process over 1-2 months.                          Modern DLRM models are usually trained with a vast num-
+                                                                       ber of categorical (‘sparse’) and numerical (‘dense’) fea-
+In this work, we treat user actions as a new modality in gen-          tures. In GRs, we consolidate and encode these features into
+erative modeling. Our key insights are, a) core ranking and            a single unified time series, as depicted in Figure 2.
+retrieval tasks in industrial-scale recommenders can be cast
+as generative modeling problems given an appropriate new               Categorical (‘sparse’) features. Examples of such fea-
+feature space; b) this paradigm enables us to systematically           tures include items that user liked, creators in a category
+leverage redundancies in features, training, and inference             (e.g., Outdoors) that user is following, user languages, com-
+to improve efficiency. Due to our new formulation, we                  munities that user joined, cities from which requests were
+deployed models that are three orders of magnitude more                initiated, etc. We sequentialize these features as follows. We
+computationally complex than prior state-of-the-art, while             first select the longest time series, typically by merging the
+improving topline metrics by 12.4%, as shown in Figure 1.              features that represent items user engaged with, as the main
+                                                                       time series. The remaining features are generally time series
+Our contributions are as follows. We first propose Gener-              that slowly change over time, such as demographics or fol-
+ative Recommenders (GRs) in Section 2, a new paradigm                  lowed creators. We compress these time series by keeping
+replacing DLRMs. We sequentialize and unify the hetero-                the earliest entry per consecutive segment and then merge
+geneous feature space in DLRMs, with the new approach                  the results into the main time series. Given these time series
+approximating the full DLRM feature space as sequence                  change very slowly, this approach does not significantly
+length tends to infinity. This enables us to reformulate the           increase the overall sequence length.
+main recommendation problems, ranking and retrieval, as
+pure sequential transduction tasks in GRs. Importantly, this           Numerical (‘dense’) features. Examples of such features
+further enables model training to be done in a sequential,             include weighted and decayed counters, ratios, etc. For in-
+generative fashion, which permits us to train on orders of             stance, one feature could represent user’s past click through
+magnitude more data with the same amount of compute.                   rate (CTR) on items matching a given topic. Compared
+                                                                       to categorical features, these features change much more
+We next address computational cost challenges through-                 frequently, potentially with every single (user, item) inter-
+out training and inference. We propose a new sequential                action. It is therefore infeasible to fully sequentialize such
+transduction architecture, Hierarchical Sequential Trans-              features from computational and storage perspectives. How-
+duction Units (HSTU). HSTU modifies attention mecha-                   ever, an important observation is that the categorical features
+nism for large, non-stationary vocabulary, and exploits char-          (e.g., item topics, locations) over which we perform these
+acteristics of recommendation datasets to achieve 5.3x to              aggregations are already sequentialized and encoded in GRs.
+15.2x speedup vs FlashAttention2-based Transformers on                 Hence, we can remove numerical features in GRs given a
+8192 length sequences. Further, through a new algorithm,               sufficiently expressive sequential transduction architecture
+M-FALCON, that fully amortizes computational costs via                 coupled with a target-aware formulation (Zhou et al., 2018)
+micro-batching (Section 3.4), we can serve 285x more com-              can meaningfully capture numerical features as we increase
+
+
+                                                                   2
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+
+
+
+                      Training
+                                                        Ψ1(t1)      Ψ2(t2)        ...   Ψ9(t9)                                             Ψ’0 (t2)                            Ψ’1 (t9)
+                                                                                                                    emit example
+                                                                             emit example
+
+                                                                                                                                                                            emit example
+
+
+
+
+                                 Numerical features
+
+
+
+
+                                                                                                                                                                                           Sequentialized+model-based unified features
+                                                         CTR0        CTR0                 CTR0
+                                                                    P(X=x)
+                                                        (at t1)     (at t2)              (at t9)
+                                                           ...         ...       ...        ...                                  Causal-masked learned features
+                                                                                                     replace w/                 via (target-aware) cross attention
+                                                        Ratio2      Ratio2              Ratio2         models
+                                                        (at t1)     (at t2)             (at t9)
+                                                                                                                       G0           Φ0        Φ1            H0         G1        Φn-1
+                                                                                                                                                    ...          ...
+                                                                                                                       t0          t1,a0     t2, a1         t7         t8       t9, an-1
+
+                                                        E0,E1,...   E1,E2,...           E7,E8,...                                   Φ0         Φ1                                Φn-1
+                                                                                                                                                     ...         ...
+                      Features
+
+
+
+                                                                                 ...                                               t1,a0      t2, a1                            t9, an-1
+                                                                                                      merge &
+                                 Categorical features
+
+
+
+                                                        F0,F1       F0,F3                   F7      sequentialize           main time series
+
+                                                                                                                       G0          G0         G0      ...        ...   G1        G1
+                                                          G0          G0         ...        G1                         t0          t1         t2                       t8        t9
+                                                                                                    sequentialize
+                                                                                                                       auxiliary time series 1
+                                                                                                                                                            H0   ...   H0         H0
+                                                                                 ...        H0                                                                         t8         t9
+                                                                                                    sequentialize                                           t7
+                                                                                                                       auxiliary time series 2
+
+                        Deep Learning Recommendation Models (DLRMs)                                                                 Generative Recommenders (GRs)
+
+Figure 2. Comparison of features and training procedures: DLRMs vs GRs. E, F, G, H denote categorical features. Φi represents the i-th
+item in the merged main time series. Ψk (tj ) denotes training example k emitted at time tj . Full notations can be found in Appendix A.
+
+the overall sequence length and compute in GRs.                                                                             Φi+1 , as users could respond negatively to Φi+1 . Second,
+                                                                                                                            yi is undefined when xi+1 represents a non-engagement
+2.2. Reformulating ranking and retrieval as sequential                                                                      related categorical feature, such as demographics.
+     transduction tasks
+                                                                                                                            Ranking. Ranking tasks in GRs pose unique challenges as
+Given a list of n tokens x0 , x1 , . . . , xn−1 (xi ∈ X) ordered                                                            industrial recommendation systems often require a “target-
+chronologically, the time when those tokens are observed                                                                    aware” formulation. In such settings, “interaction” of target,
+t0 , t1 , . . . , tn−1 , a sequential transduction task maps this                                                           Φi+1 , and historical features needs to occur as early as
+input sequence to the output tokens y0 , y1 , . . . , yn−1 (yi ∈                                                            possible, which is infeasible with a standard autoregressive
+X ∪ {∅}), where yi = ∅ indicates that yi is undefined.                                                                      setup where “interaction” happens late (e.g., via softmax
+We use Φi ∈ Xc (Xc ⊆ X) to denote a content (e.g., images                                                                   after encoder output). We address this by interleaving items
+or videos) that the system provides to the user. Given new                                                                  and actions in Table 1, which enables the ranking task to
+content are constantly created, Xc and X are non-stationary.                                                                be formulated as p(ai+1 |Φ0 , a0 , Φ1 , a1 , . . . , Φi+1 ) (before
+The user can respond to Φi with some action ai (e.g., like,                                                                 categorical features). We apply a small neural network to
+skip, video completion+share) ai ∈ X. We denote the total                                                                   transform outputs at Φi+1 into multi-task predictions in
+number of contents that a user has interacted with by nc .                                                                  practice. Importantly, this enables us to apply target-aware
+                                                                                                                            cross-attention to all nc engagements in one pass.
+The standard ranking and retrieval tasks, in causal autore-
+gressive settings, can then be defined as sequential transduc-                                                              2.3. Generative training
+tion tasks (Table 1). We make the following observations:
+                                                                                                                            Industrial recommenders are commonly trained in a stream-
+    Task             Specification (Inputs / Outputs)                                                                       ing setup, where each example is processed sequentially as
+              xi s   Φ0 , a0 , Φ1 , a1 , . . . , Φnc −1 , anc −1                                                            they become available. In this setup, the total computational
+  Ranking
+              yi s   a0 , ∅, a1 , ∅, . . . , anc −1 , ∅                                                                     requirement for self-attention based sequential transduction
+              xi s   (Φ0 , a0 ), (Φ1 , a1 ), . . . , (Φnc −1 , anc −1 )                                                     architectures,
+                                                                                                                                       P such as Transformers (Vaswani et al., 2017),
+  Retrieval
+              yi s
+                     Φ′1 , Φ′2 , . . . , Φ′nc −1 , ∅                                                                        scales as i ni (n2i d + ni df f d), where ni is the number of
+                     (Φ′i = Φi if ai is positive, otherwise ∅)                                                              tokens of user i, and d is the embedding dimension. The
+Table 1. Ranking and retrieval as sequential transduction tasks.                                                            first part in the parentheses comes from self-attention, with
+Other categorical features are omitted for simplicity. We compare                                                           assumed O(n2 ) scaling factor due to most subquadratic al-
+GRs with traditional sequential recommenders in Appendix B.2.                                                               gorithms involving quality tradeoffs and underperforming
+                                                                                                                            quadratic algorithms in wall-clock time (Dao et al., 2022).
+Retrieval. In recommendation system’s retrieval stage, we                                                                   The second part comes from pointwise MLP layers, with hid-
+learn a distribution p(Φi+1 |ui ) over Φi+1 ∈ Xc , where ui                                                                 den layers of size O(df f ) = O(d). Taking N = maxi ni ,
+is the user’s representation at token i. A typical objective is                                                             the overall time complexity reduces to O(N 3 d + N 2 d2 ),
+to select arg maxΦ∈Xc p(Φ|ui ) to maximize some reward.                                                                     which is cost prohibitive for recommendation settings.
+This differs from a standard autoregressive setup in two
+ways. First, the supervision for xi , yi , is not necessarily                                                               To tackle the challenge of training sequential transduc-
+
+                                                                                                                     3
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+tion models over long sequences in a scalable manner, we
+
+
+
+
+                                                                             Representation transformations
+                                                                                                                                                       Y(X) = f2(...)
+move from traditional impression-level training to genera-
+                                                                                                                        Top Neural              Norm(A(X)V(X))⊙U(X)
+tive training, reducing the computational complexity by an                                                               Networks
+                                                                                                                      (MMoE, PLE, …)
+O(N ) factor, as shown at the top of Figure 2. By doing so,                                                                                   A(X)=ϕ2(QKT+rabP,T)       U(X)
+encoder costs are amortized across multiple targets. More
+                                                                                                                                                  U, Q, K, V = ϕ1(f1(X))
+specifically, when we sample theP  i-th user at rate su (ni ), the                                                                               Add&Norm
+
+total training cost now scales as i su (ni )ni (n2i d + ni d2 ),                                                                                       Y(X) = f2(...)
+which is reduced to O(N 2 d + N d2 ) by setting su (ni ) to                                                        Feature Interactions         Norm(A(X)V(X))⊙U(X)
+
+
+
+
+                                                                              Feature interactions
+1/ni . One way to implement this sampling in industrial-                                                             Neural Networks
+                                                                                                                       (FMs, DCN,
+scale systems is to emit training examples at the end of a                                                         Transformers, DHEN,        A(X)=ϕ2(QKT+rabP,T)       U(X)
+                                                                                                                            …)
+user’s request or session, resulting in sˆu (ni ) ∝ 1/ni .                                                                                        U, Q, K, V = ϕ1(f1(X))
+                                                                                                                                                  Add&Norm
+
+                                                                                                                                                       Y(X) = f2(...)
+3. A High Performance Self-Attention Encoder
+                                                                                                                Bottom        Embedding         Norm(A(X)V(X))⊙U(X)
+   for Generative Recommendations                                                                               Neural        Operators /
+
+
+
+
+                                                                              Feature extractions
+                                                                                                               Networks       Embeddings
+                                                                                                                                              A(X)=ϕ2(QKT+rabP,T)       U(X)
+To scale up GRs for industrial-scale recommendation sys-
+                                                                                                              Numerical        Categorical
+tems with large, non-stationary vocabularies, we next intro-                                                  Features in      Features in        U, Q, K, V = ϕ1(f1(X))
+                                                                                                                DLRMs            DLRMs
+duce a new encoder design, Hierarchical Sequential Trans-                                                                                            Preprocessing
+duction Unit (HSTU). HSTU consists of a stack of identical                                                           Raw Features            Sequentialized Unified Features
+layers connected by residual connections (He et al., 2015).
+Each layer contains three sub-layers: Pointwise Projection               Figure 3. Comparison of key model components: DLRMs vs GRs.
+(Equation 1), Spatial Aggregation (Equation 2), and Point-               The complete DLRM setup (Mudigere et al., 2022) is shown on
+wise Transformation (Equation 3):                                        the left side and a simplified HSTU is shown on the right.
+       U (X), V (X), Q(X), K(X) = Split(ϕ1 (f1 (X)))          (1)
+                                                                         This design is motivated by the difficulty of approximat-
+                                            
+      A(X)V (X) = ϕ2 Q(X)K(X)T + rabp,t V (X)                 (2)        ing dot products with learned MLPs (Rendle et al., 2020;
+                                                                         Zhai et al., 2023a). Given SiLU is applied to U (X),
+          Y (X) = f2 (Norm (A(X)V (X)) ⊙ U (X))               (3)
+                                                                         Norm (A(X)V (X)) ⊙ U (X) can also be interpreted as a
+where fi (X) denotes an MLP; we use one linear layer,                    variant of SwiGLU (Shazeer, 2020).
+fi (X) = Wi (X) + bi for f1 and f2 to reduce compute                     Transformations of Representations is commonly done with
+complexity and further batches computations for queries                  Mixture of Experts (MoEs) and routing to handle diverse,
+Q(X), keys K(X), values V (X), and gating weights U (X)                  heterogeneous populations. A key idea is to perform condi-
+with a fused kernel; ϕ1 and ϕ2 denote nonlinearity, for                  tional computations by specializing sub-networks for differ-
+both of which we use SiLU (Elfwing et al., 2017); Norm is                ent users (Ma et al., 2018; Tang et al., 2020). Element-wise
+layer norm; and rabp,t denotes relative attention bias (Raffel           dot products in HSTU can virtually perform gating opera-
+et al., 2020) that incorporates positional (p) and temporal              tions used in MoEs up to a normalization factor.
+(t) information. Full notations used can be found in Table 9.
+                                                                         3.1. Pointwise aggregated attention
+HSTU encoder design allows for the replacement of hetero-
+geneous modules in DLRMs with a single modular block.                    HSTU adopts a new pointwise aggregated (normalized) at-
+We observe that there are, effectively, three main stages                tention mechanism (in contrast, softmax attention computes
+in DLRMs: Feature Extraction, Feature Interactions, and                  normalization factor over the entire sequence). This is moti-
+Transformations of Representations. Feature Extractions re-              vated by two factors. First, the number of prior data points
+trieves the pooled embedding representations of categorical              related to target serves as a strong feature indicating the
+features. Their most advanced versions can be generalized                intensity of user preferences, which is hard to capture after
+as pairwise attention and target-aware pooling (Zhou et al.,             softmax normalization. This is critical as we need to predict
+2018), which is captured with HSTU layers.                               both the intensity of engagements, e.g., time spent on a given
+                                                                         item, and the relative ordering of the items, e.g., predicting
+Feature Interaction is the most critical part of DLRMs.
+                                                                         an ordering to maximize AUC. Second, while softmax acti-
+Common approaches used include factorization machines
+                                                                         vation is robust to noise by construction, it is less suited for
+and their neural network variants (Rendle, 2010; Guo
+                                                                         non-stationary vocabularies in streaming settings.
+et al., 2017; Xiao et al., 2017), higher order feature interac-
+tions (Wang et al., 2021), etc. HSTU replaces feature interac-           The proposed pointwise aggregated attention mechanism is
+tions by enabling attention pooled features to directly “inter-          depicted in Equation (2). Importantly, layer norm is needed
+act” with other features via Norm (A(X)V (X)) ⊙ U (X).                   after pointwise pooling to stabilize training. One way to
+
+                                                                     4
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+            Architecture              HR@10        HR@50                                               Max Sequence Lengths
+                                                                                    Alpha (α)
+       Transformers                   .0442        .2025                                           1,024  2,048   4,096    8,192
+       HSTU (-rabp,t , Softmax)       .0617        .2496                                1.6       71.5%     76.1%    80.5%     84.4%
+       HSTU (-rabp,t )                .0893        .3170                                1.7       56.1%     63.6%    69.8%     75.6%
+                                                                                        1.8       40.2%     45.3%    54.1%     66.4%
+     Table 2. Synthetic data in one-pass streaming settings.
+                                                                                        1.9       17.2%     21.0%    36.3%     64.1%
+                                                                                        2.0        3.1%      6.6%    29.1%     64.1%
+understand this design is through synthetic data following
+a Dirichlet Process that generates streaming data over a                     Table 3. Impact of Stochastic Length (SL) on sequence sparsity.
+nonstationary vocabulary (details in Appendix C). In this
+setting, we can observe gaps as large as 44.7% between                       Table 3 presents the sparsity (see Appendix F) for different
+softmax and pointwise attention setups as shown in Table 2.                  sequence lengths and α values, for a representative industry-
+                                                                             scale configuration with 30-day user history. The settings
+3.2. Leveraging and algorithmically increasing sparsity                      that result in negligible regression in model quality are un-
+                                                                             derlined and highlighted in blue. The rows labeled “α = 2.0”
+In recommendation systems, the length of user history se-                    represents the base sparsity case where SL is not applied.
+quences often follows a skewed distribution, leading to                      Lower α’s are applicable to longer sequences up to the
+sparse input sequences, particularly in the settings with                    longest sequence length we tested, 8,192.
+very long sequences. This sparsity can be leveraged to sig-
+nificantly improve the efficiency of the encoder. To achieve                 3.3. Minimizing activation memory usage
+this, we have developed an efficient attention kernel for
+GPUs that fuses back-to-back GEMMs in a manner sim-                          In recommendation systems, the use of large batch sizes is
+ilar to (Rabe & Staats, 2021; Dao et al., 2022) but per-                     crucial for both training throughput (Mudigere et al., 2022)
+forms fully raggified attention computations. This essen-                    and model quality (Yang et al., 2020; Chen et al., 2020;
+tially transforms the attention computation into grouped                     Zhai et al., 2023a). Consequently, activation memory usage
+GEMMs of various sizes (Appendix G). As a result, self-                      becomes a major scaling bottleneck, in contrast to large
+attention  in HSTU becomes memory-bound and scales as                        language models that are commonly trained with small batch
+Θ( i n2i d2qk R−1 ) in terms of memory accesses, where ni
+    P                                                                        sizes and dominated by parameter memory usage.
+is the sequence length for sample i, dqk is attention dimen-                 Compared to Transformers, HSTU employs a simplified
+sion, and R is the register size. This approach by itself leads              and fully fused design that significantly reduces activation
+to 2-5x throughput gains as discussed in Section 4.2.                        memory usage. Firstly, HSTU reduces the number of linear
+We further algorithmically increase the sparsity of user his-                layers outside of attention from six to two, aligning with
+tory sequences via Stochastic Length (SL). One key char-                     recent work that uses elementwise gating to reduce MLP
+acteristic of user history sequences in recommendations is                   computations (Hua et al., 2022; Gu et al., 2022). Secondly,
+that user behaviors are temporally repetitive, as user behav-                HSTU aggressively fuses computations into single opera-
+iors manifest at multiple scales throughout their interaction                tors, including ϕ1 (f1 (·)) in Equation (1), and layer norm,
+history. This represents an opportunity to increase sparsity                 optional dropout, and output MLP in Equation (3). This
+artificially without compromising model quality, P   thereby                 simplified design reduces the activation memory usage to
+significantly reducing encoder cost that scales as Θ( i n2i ).               2d+2d+4hdqk +4hdv +2hdv = 14d per layer in bfloat16.
+                                                      c,j
+We can represent user j’s history as a sequence (xi )i=0  ,
+                                                               n             For comparison, Transformers use a feedforward layer and
+where nc,j is the number of contents user interacted with.                   dropout after attention (intermediate state of 3hdv ), fol-
+Let Nc = maxj nc,j . Let (xik )L                                             lowed by a pointwise feedforward block consisting of layer
+                                 k=0 be a subsequence of
+                                                     nc,j
+length L constructed from the original sequence (xi )i=0  .                  norm, linear, activation, linear, and dropout, with intermedi-
+SL selects input sequences as follows:                                       ate states of 2d + 4df f + 2d + 1d = 4d + 4df f . Here,
+         n
+                                                                             we make standard assumptions that hdv ≥ d and that
+           c,j
+     (xi )i=0  if nc,j ≤ Ncα/2                                               df f = 4d (Vaswani et al., 2017; Brown et al., 2020). Thus,
+  (xik )N
+          α/2
+          c            α/2
+                           , w/ probability 1 − Ncα /n2c,j         (4)       after accounting for input and input layer norm (4d) and
+        k=0 if nc,j > Nc
+          nc,j
+                                                                             qkv projections, the total activation states is 33d. HSTU’s
+     (xi )i=0  if nc,j > Ncα/2 , w/ probability Ncα /n2c,j                   design hence enables scaling to > 2x deeper layers.
+which reduces attention-related complexity to O(Ncα d) =                     Additionally, large scale atomic ids used to represent vocab-
+O(N α d) for α ∈ (1, 2]. A more thorough discussion of                       ularies also require significant memory usage. With a 10b
+subsequence selection can be found in Appendix F.1. We                       vocabulary, 512d embeddings, and Adam optimizer, storing
+remark that applying SL to training leads to a cost-effective                embeddings and optimizer states in fp32 already requires
+system design, as training generally involves a significantly                60TB memory. To alleviate memory pressure, we employ
+higher computational cost compared to inference.                             rowwise AdamW optimizers (Gupta et al., 2014; Khudia
+
+                                                                         5
+         Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+et al., 2021) and place optimizer states on DRAM, which               rows labeled “HSTU” use identical configurations as SAS-
+reduces HBM usage per float from 12 bytes to 2 bytes.                 Rec (same number of layers, heads, etc.). “HSTU-large”
+                                                                      represents larger HSTU encoders (4x number of layers and
+3.4. Scaling up inference via cost-amortization                       2x number of heads). Results show that a) HSTU, with its
+                                                                      design optimized for recommendations, significantly outper-
+The last challenge we address is the large number of candi-           forms the baseline when using the same configuration, and
+dates recommendation systems need to process at serving               b) HSTU further improves performance when scaled up.
+time. We focus on ranking as for retrieval, encoder cost
+is fully amortizable, and efficient algorithms exist for both         It is important to note that the evaluation methodology used
+MIPS leveraging quantization, hashing, or partitioning (Je-           here differs significantly from industrial-scale settings, as
+gou et al., 2011; Shrivastava & Li, 2014; Li et al., 2002;            full-shuffle and multi-epoch training are generally not practi-
+Zhai et al., 2011) and non-MIPS cases via beam search or              cal in streaming settings used in industry (Liu et al., 2022).
+hierarchical retrieval (Zhuo et al., 2020; Zhai et al., 2023a).
+                                                                      4.1.2. I NDUSTRIAL - SCALE S TREAMING S ETTINGS
+For ranking, we have up to tens of thousands of candi-
+dates (Covington et al., 2016; Wang et al., 2020). We pro-            We next compare the performance of HSTU, ablated HS-
+pose an algorithm M-FALCON (Microbatched-Fast Atten-                  TUs, and transformers using industrial-scale datasets in a
+tion Leveraging Cacheable OperatioNs) to perform infer-               streaming setting. Throughout the rest of this section, we re-
+ence for m candidates with an input sequence size of n.               port Normalized Entropy (NE) (He et al., 2014) for ranking.
+                                                                      We train the models over 100B examples (DLRM equiva-
+Within a forward pass, M-FALCON handles bm candidates                 lent), with 64-256 H100s used per job. Given ranking is
+in parallel by modifying attention masks and rabp,t biases            done in a multi-task setting, we report the main engage-
+such that the attention operations performed for bm candi-            ment event (“E-Task”) and the main consumption event
+dates are exactly the same. This reduces the cost of apply-           (“C-Task”). In our context, we consider a 0.001 reduction
+ing cross-attention from O(bm n2 d) to O((n + bm )2 d) =              in NE significant as it generally leads to .5% topline met-
+O(n2 d) when bm can be considered a small constant rela-              ric improvements for billions of users. For retrieval, given
+tive to n. We optionally divide the overall m candidates into         the setup is similar to language modeling, we report log
+⌈m/bm ⌉ microbatches of size bm to leverage encoder-level             perplexity. We fix encoder parameters in a smaller-scale
+KV caching (Pope et al., 2022) either across forward passes           setting (l = 3, n = 2048, d = 512 for ranking and l = 6,
+to reduce cost, or across requests to minimize tail latency           n = 512, d = 256 for retrieval), and grid-search other
+(More detailed discussions in Appendix H).                            hyperparameters due to resource limits.
+Overall, M-FALCON enables model complexity to linearly                We show results in Table 5. First, HSTU significantly out-
+scale up with the number of candidates in traditional DL-             performs Transformers, especially in ranking, likely due
+RMs’s ranking stages; we succeeded in applying a 285x                 to pointwise attention and improved relative attention bi-
+more complex target-aware cross attention model at 1.5x-3x            ases. Second, the gaps between the ablated HSTUs and
+throughput with a constant inference budget for a typical             HSTU confirm the effectiveness of our designs. Optimal
+ranking configuration discussed in Section 4.3.                       learning rates are about 10x lower for Softmax-based HSTU
+                                                                      and Transformer vs the rest due to training stability. Even
+4. Experiments                                                        with lower learning rates and pre-norm residual connec-
+4.1. Validating Inductive Hypotheses of HSTU Encoder                  tions (Xiong et al., 2020), we encountered frequent loss
+                                                                      explosions with standard Transformers in ranking. Finally,
+4.1.1. T RADITIONAL S EQUENTIAL S ETTINGS                             HSTU outperforms a popular Transformer variant used in
+We first evaluate the performance of HSTU on two popular              LLMs, Transformer++ (Touvron et al., 2023a), which uses
+recommender datasets, MovieLens and Amazon Reviews.                   RoPE (Su et al., 2023), SwiGLU, etc. Overall, in this small-
+We follow sequential recommendation settings in literature,           scale setting, HSTU shows better quality at 1.5x-2x faster
+including full shuffle and multi-epoch training. For baseline,        wall-clock time and 50% less HBM usage.
+we use SASRec, a state-of-the-art Transformer implementa-
+tion (Kang & McAuley, 2018) 1 . We report Hit Rate@K and              4.2. Encoder Efficiency
+NDCG@K over the entire corpus, consistent with recent                 Stochastic Length. Figure 4 and Figure 5 (a) show the im-
+work (Dallmann et al., 2021; Zhai et al., 2023a).                     pact of stochastic length (SL) on model metrics. At α = 1.6,
+Results are presented in Table 4. “SASRec (2023)” denotes             a sequence of length 4096 is turned into a sequence of length
+the best SASRec recipe reported in (Zhai et al., 2023a). The          776 the majority of the time, or removing more than 80%
+                                                                      of the tokens. Even after sparsity ratio increases to 64%-
+   1
+       Results for other baselines are reported in Appendix D.        84%, the NEs we obtained for main tasks did not degrade by
+
+                                                                  6
+                                      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+                                                                 Table 4. Evaluations of methods on public datasets in multi-pass, full-shuffle settings.
+                                                   Method                                                      HR@10                         HR@50                         HR@200                NDCG@10          NDCG@200
+                                                   SASRec (2023)                                               .2853                         .5474                         .7528                 .1603            .2498
+                                ML-1M              HSTU                                                        .3097 (+8.6%)                 .5754 (+5.1%)                 .7716 (+2.5%)         .1720 (+7.3%)    .2606 (+4.3%)
+                                                   HSTU-large                                                  .3294 (+15.5%)                .5935 (+8.4%)                 .7839 (+4.1%)         .1893 (+18.1%)   .2771 (+10.9%)
+                                                   SASRec (2023)                                               .2906                         .5499                         .7655                 .1621            .2521
+                               ML-20M              HSTU                                                        .3252 (+11.9%)                .5885 (+7.0%)                 .7943 (+3.8%)         .1878 (+15.9%)   .2774 (+10.0%)
+                                                   HSTU-large                                                  .3567 (+22.8%)                .6149 (+11.8%)                .8076 (+5.5%)         .2106 (+30.0%)   .2971 (+17.9%)
+                                                   SASRec (2023)                                               .0292                         .0729                         .1400                 .0156            .0350
+                                  Books            HSTU                                                        .0404 (+38.4%)                .0943 (+29.5%)                .1710 (+22.1%)        .0219 (+40.6%)   .0450 (+28.6%)
+                                                   HSTU-large                                                  .0469 (+60.6%)                .1066 (+46.2%)                .1876 (+33.9%)        .0257 (+65.8%)   .0508 (+45.1%)
+
+Table 5. Evaluation of HSTU, ablated HSTU, and Transformers                                                                                                               Table 6. Offline/Online Comparison of Retrieval Models.
+on industrial-scale datasets in one-pass streaming settings.
+                                                                                                                                                                                                   Offline HR@K        Online metrics
+                                                                                                                                                                              Methods
+                                                                              Retrieval                                       Ranking (NE)                                                         K=100 K=500        E-Task C-Task
+                                       Architecture
+                                                                               log pplx.                                     E-Task C-Task                              DLRM                       29.0%    55.5%       +0%      +0%
+                             Transformers                                         4.069                                        NaN      NaN                             DLRM (abl. features)       28.3%    54.3%          –
+                             HSTU (-rabp,t , Softmax)                             4.024                                       .5067    .7931                            GR (content-based)         11.6%    18.8%          –
+                             HSTU (-rabp,t )                                      4.021                                       .4980    .7860                            GR (interactions only)     35.6%    61.7%          –
+                             Transformer++                                        4.015                                       .4945    .7822                            GR (new source)                               +6.2% +5.0%
+                                                                                                                                                                                                   36.9%    62.4%
+                             HSTU (original rab)                                  4.029                                       .4941    .7817                            GR (replace source)                           +5.1% +1.9%
+                             HSTU                                                 3.978                                       .4937    .7805
+                                                                                                                                                                          Table 7. Offline/Online Comparison of Ranking Models.
+                                Average NE Across Tasks    Percent Sparsity                                      Average NE Across Tasks    Percent Sparsity                                         Offline NEs       Online metrics
+                            0.0030                                        100.0%                             0.0015                                        110.0%             Methods
+                                                                                                                                                                                                   E-Task C-Task       E-Task C-Task
+                                                                                                                                                           90.0%
+                                                                                 NE Difference vs Baseline
+NE Difference vs Baseline
+
+
+
+
+                            0.0020
+                                                                          75.0%
+                                                                                                             0.0010                                        70.0%
+                                                                                                                                                                        DLRM                        .4982     .7842      +0%      +0%
+                                                                          50.0%
+                                                                                                                                                           50.0%
+                                                                                                                                                                        DLRM (DIN+DCN)              .5053     .7899         –         –
+                            0.0010
+                                                                          25.0%
+                                                                                                             0.0005
+                                                                                                                                                           30.0%        DLRM (abl. features)        .5053     .7925         –         –
+                            0.0000                                        0.0%                               0.0000
+                                                                                                                                                           10.0%        GR (interactions only)      .4851     .7903         –         –
+                                                                                                                                                           -10.0%       GR                          .4845     .7645   +12.4% +4.4%
+                                                                          -25.0%
+                            -0.0010                                                                          -0.0005                                       -30.0%
+                                       1.6   1.7    1.8    1.9     2                                                   1.6    1.7    1.8    1.9     2
+                                                   Alpha                                                                            Alpha
+                                                                                                                                                                       4.3. Generative Recommenders vs DLRMs in
+Figure 4. Impact of Stochastic Length (SL) on metrics. Left: n =                                                                                                            Industrial-scale Streaming Settings
+4096. Right: n = 8192. Full results can be found in Appendix F.
+                                                                                                                                                                       Lastly, we compare the end-to-end performance of GRs
+more than 0.002 (0.2%). This evidence supports that SL, for                                                                                                            against state-of-the-art DLRM baselines in industrial-scale
+suitable αs, does not negatively impact model quality and                                                                                                              streaming settings. Our GR implementation reflects a typ-
+allows for high sparsity to reduce training cost. We further                                                                                                           ical configuration used in production, whereas the DLRM
+verify in Appendix F.3 that SL significantly outperforms                                                                                                               settings reflect iterations of hundreds of people over multi-
+existing length extrapolation techniques.                                                                                                                              ple years. Given multiple generators are used in the retrieval
+                                                                                                                                                                       stage of a recommendation system, we report both the online
+Encoder Efficiency. Figure 5 compares the efficiency                                                                                                                   result for adding GR (“add source”) and replacing existing
+of HSTU and Transformer encoders in training and infer-                                                                                                                main DLRM source (“replace source”). Table 6 and Table 7
+ence settings. For Transformers, we use the state-of-the-art                                                                                                           show that GR not only significantly outperforms DLRMs
+FlashAttention-2 (Dao, 2023) implementation. We consider                                                                                                               offline, but also brings 12.4% wins in A/B tests.
+sequence lengths ranging from 1,024 to 8,192 and apply
+Stochastic Length (SL) during training. In the evaluation,                                                                                                             As discussed in Section 2, GRs build upon raw categorical
+we use the same configuration for HSTU and Transformer                                                                                                                 engagement features, while DLRMs are typically trained
+(d = 512, h = 8, dqk = 64) and ablate relative attention                                                                                                               with a significantly larger number of features, the majority
+bias considering HSTU outperforms Transformers without                                                                                                                 of which are handcrafted from raw signals. If we give the
+rabp,t , as demonstrated in Section 4.1.2. We compare the                                                                                                              same set of features used in GRs to DLRMs (“DLRM (abl.
+encoder-level performance in bfloat16 on NVIDIA H100                                                                                                                   features)”), the performance of DLRMs is significantly de-
+GPUs. Overall, HSTU is up to 15.2x and 5.6x more efficient                                                                                                             graded, which suggests GRs can meaningfully capture those
+than Transformers in training and inference, respectively.                                                                                                             features via their architecture and unified feature space.
+
+Additionally, the decrease in activation memory usage as                                                                                                               We further validate the GR formulation in Section 2.2 by
+discussed in Section 3.3 enables us to construct over 2x                                                                                                               comparing it with a traditional sequential recommender
+deeper networks with HSTUs compared to Transformers.                                                                                                                   setup that only considers items user interacted with (Kang
+
+                                                                                                                                                                   7
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+                                                                                       GR (101x FLOPs)    GR (285x FLOPs)         DLRM (1x FLOPs)
+                                                                                       1,250,000
+
+                                                                                       1,000,000
+
+                                                                                        750,000
+
+
+
+
+                                                                                 QPS
+                                                                                        500,000
+
+                                                                                        250,000
+
+                                                                                               0
+                                                                                                   32     64      128       256      512    1024
+                                                                                                   Candidates scored in M-FALCON (m)
+
+                                                                         Figure 6. Comparison of inference throughput, in the most chal-
+                                                                         lenging ranking setup. Full results can be found in Appendix H.1.
+                                    (a) Training NE.
+                                                                         regimes (Zhao et al., 2023). We compare the scalability of
+                                                                         GRs and DLRMs to better understand this phenomenon.
+                                                                         Since feature interaction layers are crucial for DLRM’s per-
+                                                                         formance (Mudigere et al., 2022), we experimented with
+                                                                         Transformers (Vaswani et al., 2017), DHEN (Zhang et al.,
+                                                                         2022), and a variant of DCN (Wang et al., 2021) augmented
+                                                                         with residual connections (He et al., 2015) used in our pro-
+                                                                         duction settings to scale up the DLRM baseline in the rank-
+                                                                         ing setting. For the retrieval baseline, given our baseline
+                                                                         used a residual setup, we scaled up hidden layer sizes, em-
+                                                                         bedding dimensions, and number of layers. For HSTU-
+                                 (b) Training Speedup.                   based Generative Recommenders (GRs), we scaled up the
+                                                                         model by adjusting the hyperparameters for HSTU, includ-
+                                     HSTU    Transformers
+                        125.00
+                                                                         ing the number of residual layers, sequence length, em-
+                        100.00
+                                                                         bedding dimensions, number of attention heads, etc. We
+                                                                         additionally adjust the number of negatives for retrieval.
+         Latency (ms)
+
+
+
+
+                         75.00
+
+                         50.00                                           Results are shown in Figure 7. In the low compute regime,
+                         25.00                                           DLRMs might outperform GRs due to handcrafted features,
+                          0.00
+                                  1024      2048      4096    8192
+                                                                         corroborating the importance of feature engineering in tra-
+                                                                         ditional DLRMs. However, GRs demonstrate substantially
+                                            Sequence Length
+                                                                         better scalability with respect to FLOPs, whereas DLRM
+                                 (c) Inference Speedup.
+                                                                         performance plateaus, consistent with findings in prior work.
+Figure 5. Encoder-level efficiency: HSTU vs FlashAttention2-             We also observe better scalability w.r.t. both embedding pa-
+based Transformers for Training (a, b) and Inference (c).                rameters and non-embedding parameters, with GRs leading
+& McAuley, 2018) (“GR (interactions only)”). The results                 to 1.5 trillion parameter models, whereas DLRMs perfor-
+are significantly worse, with its ranking variant underper-              mance saturate at about 200 billion parameters.
+forming GRs by 2.6% in NE in the main consumption task.                  Finally, all of our main metrics, including Hit Rate@100 and
+Considering the popularity of content-based methods (in-                 Hit Rate@500 for retrieval, and NE for ranking, empirically
+cluding LMs), we also include a GR baseline with only con-               scale as a power law of compute used given appropriate
+tent features (“GR (content-based)”). The substantial gap in             hyperparameters. We observe this phenomenon across three
+performance of content-based baselines and DLRMs/GRs                     orders of magnitude, up till the largest models we were able
+underscores the significance of high cardinality user actions.           to test (8,192 sequence length, 1,024 embedding dimension,
+                                                                         24 layers of HSTU), at which point the total amount of com-
+We finally compare the efficiency of GRs with our produc-                pute we used (normalized over 365 days as we use a stan-
+tion DLRMs in Figure 6. Despite the GR model being 285x                  dard streaming training setting) is close to the total training
+more computationally complex, we achieved 1.50x/2.99x                    compute used by GPT-3 (Brown et al., 2020) and LLaMa-
+higher QPS when scoring 1024/16384 candidates, due to                    2 (Touvron et al., 2023b), as shown in Figure 1. Within
+HSTU and the novel M-FALCON algorithm in Section 3.4.                    a reasonable range, the exact model hyperparameters play
+                                                                         less important roles compared to the total amount of training
+4.3.1. S CALING L AW FOR R ECOMMENDATION S YSTEMS
+                                                                         compute applied. In contrast to language modeling (Kaplan
+It is commonly known that in large-scale industrial settings,            et al., 2020), sequence length play a significantly more im-
+DLRMs saturate in quality at certain compute and params                  portant role in GRs, and it’s important to scale up sequence
+
+                                                                     8
+                                   Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+                                                 Traditional DLRMs        Generative Recommenders (GRs)
+                                  0.40
+                                                                     L = .15 + .0195 ln C                     to self-attention’s O(n2 ) scaling factor, with major work
+                                                                                                              like factorized attentions (Child et al., 2019), low-rank ap-
+                                                                                                              proximations (Katharopoulos et al., 2020), etc. Recently,
+    Eval Hit Rate@100
+
+
+
+
+                                  0.35                                                                        alternative formulations for sequential transduction settings
+                                                                                                              have been explored (Gu et al., 2022; Hua et al., 2022).
+                                                                                                              HSTU’s elementwise gating design, in particular, is inspired
+                                  0.30
+                                                                                                              by FLASH (Hua et al., 2022). Recent hardware-aware for-
+                                                                                                              mulations have been shown to significantly reduce memory
+                                  0.25                                                                        usage (Rabe & Staats, 2021; Korthikanti et al., 2022; Zhai
+                                         1000              5000 10000               50000 100000              et al., 2023b) and give significantly better wallclock time
+                                                            Training PetaFLOPs per day
+                                                                                                              results (Dao et al., 2022). Length extrapolation enables
+                                                Traditional DLRMs      Generative Recommenders (GRs)
+                                                                 L = .395 + .0212 ln C                        models trained on shorter sequences to generalize, though
+                                  0.65
+                                                                                                              most work focuses on finetuning or improving bias mech-
+                                                                                                              anisms (Press et al., 2022). Our work instead introduces
+      Eval Hit Rate@500
+
+
+
+
+                                                                                                              stochasticity in the length dimension, inspired by work on
+                                  0.60
+                                                                                                              stochasticity in the depth dimension (Huang et al., 2016).
+
+                                  0.55
+                                                                                                              Interests in large language models (LLMs) have motivated
+                                                                                                              work to treat various recommendation tasks as in-context
+                                                                                                              learning (Sileo et al., 2022), instruction tuning (Bao et al.,
+                                  0.50
+                                         1000              5000 10000               50000 100000
+                                                                                                              2023), or transfer learning (Li et al., 2023) on top of pre-
+                                                            Training PetaFLOPs per day                        trained LLMs. World knowledge embedded in LLMs can
+                                                Traditional DLRMs      Generative Recommenders (GRs)          be transferred to downstream tasks (Cui et al., 2022) and
+                                                                L = .549 + -5.3E-03 ln C                      improve recommendations in zero-shot or few-shot cases.
+                                  0.51                                                                        Textual representations of user behavior sequences have
+      Eval NE (lower is better)
+
+
+
+
+                                                                                                              also demonstrated good scaling behaviors on medium-scale
+                                  0.50
+                                                                                                              datasets (Shin et al., 2023). Most studies of LLMs for rec-
+                                  0.49                                                                        ommendation have been centered around low-data regimes;
+                                                                                                              in large-scale settings, they have yet to outperform collabo-
+                                  0.48
+                                                                                                              rative filtering on MovieLens (Hou et al., 2024).
+                                  0.47
+                                      1000                10000              100000           1000000
+                                                                                                              6. Conclusions
+                                                             Training PetaFLOPs per day
+
+Figure 7. Scalability: DLRMs vs GRs in large-scale industrial                                                 We have proposed Generative Recommenders (GRs), a new
+settings across retrieval (top, middle) and ranking (bottom). +0.005                                          paradigm that formulates ranking and retrieval as sequential
+in HR and -0.001 in NE represent significant improvements.                                                    transduction tasks, allowing them to be trained in a gener-
+length and other parameters in tandem. This is perhaps the                                                    ative manner. This is made possible by the novel HSTU
+most important advantage of our proposed method, as we’ve                                                     encoder design, which is 5.3x-15.2x faster than state-of-the-
+shown for the first time that scaling law from LLMs may                                                       art Transformers on 8192 length sequences, and through
+also apply to large-scale recommendation systems.                                                             the use of new training and inference algorithms such as
+                                                                                                              M-FALCON. With GRs, we deployed models that are 285x
+5. Related Work                                                                                               more complex while using less inference compute. GRs and
+                                                                                                              HSTU have led to 12.4% metric improvements in production
+Prior work on sequential recommenders reduces user interac-                                                   and have shown superior scaling performance compared to
+tions to a single homogeneous sequence over items (Hidasi                                                     traditional DLRMs. Our results corroborate that user actions
+et al., 2016; Kang & McAuley, 2018). Industrial-scale ap-                                                     represent an underexplored modality in generative modeling
+plications of sequential approaches are primarily pairwise                                                    – to echo our title, “Actions speak louder than words”.
+attention (Zhou et al., 2018) or sequential encoders as part
+of DLRMs (Chen et al., 2019; Xia et al., 2023). Multi-stage                                                   The dramatic simplification of features in our work paves the
+attention has been explored in lieu of self-attention to im-                                                  way for the first foundation models for recommendations,
+prove efficiency (Chang et al., 2023). Generative approaches                                                  search, and ads by enabling a unified feature space to be
+that represent ids as a token series have been explored in                                                    used across domains. The fully sequential setup of GRs also
+retrieval (Zhuo et al., 2020). We give a more extensive                                                       enables recommendation to be formulated in an end-to-end,
+discussion of prior work in Appendix B.1.                                                                     generative setting. Both of these enable recommendation
+                                                                                                              systems to better assist users holistically.
+Efficient attention has been a major research focus area due
+
+                                                                                                          9
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+I MPACT S TATEMENTS                                                   References
+We believe that our work has broad positive implications.             Bao, K., Zhang, J., Zhang, Y., Wang, W., Feng, F., and
+Reducing reliance of recommendation, search, and ads sys-               He, X. Tallrec: An effective and efficient tuning frame-
+tems on the large number of heterogeneous features can                  work to align large language model with recommenda-
+make these systems much more privacy friendly while im-                 tion. In Proceedings of the 17th ACM Conference on
+proving user experiences. Enabling recommendation sys-                  Recommender Systems, RecSys ’23. ACM, September
+tems to attribute users’ long term outcomes to short-term               2023. doi: 10.1145/3604915.3608857. URL http:
+decisions via fully sequential formulations could reduce the            //dx.doi.org/10.1145/3604915.3608857.
+prevalence of content that do not serve users’ long term
+goals (including clickbaits and fake news) across the web,            Brown, T. B., Mann, B., Ryder, N., Subbiah, M., Kaplan,
+and better align incentives of platforms with user values. Fi-          J., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G.,
+nally, applications of foundation models and scaling law can            Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G.,
+help reduce carbon footprints incurred with model research              Henighan, T., Child, R., Ramesh, A., Ziegler, D. M., Wu,
+and developments needed for recommendations, search, and                J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M.,
+related use cases.                                                      Gray, S., Chess, B., Clark, J., Berner, C., McCandlish,
+                                                                        S., Radford, A., Sutskever, I., and Amodei, D. Language
+                                                                        models are few-shot learners. 2020.
+Acknowledgements
+This work represents the joint efforts of hundreds of people,         Chang, J., Zhang, C., Fu, Z., Zang, X., Guan, L., Lu, J., Hui,
+and would not be possible without work from the following               Y., Leng, D., Niu, Y., Song, Y., and Gai, K. Twin: Two-
+contributors (alphabetical order): Adnan Akhundov, Bugra                stage interest network for lifelong user behavior modeling
+Akyildiz, Shabab Ayub, Alex Bao, Renqin Cai, Jennifer                   in ctr prediction at kuaishou, 2023.
+Cao, Guoqiang Jerry Chen, Lei Chen, Sean Chen, Xianjie
+Chen, Huihui Cheng, Weiwei Chu, Ted Cui, Shiyan Deng,                 Chen, Q., Zhao, H., Li, W., Huang, P., and Ou, W. Behavior
+Nimit Desai, Fei Ding, Francois Fagan, Lu Fang, Liang                   sequence transformer for e-commerce recommendation in
+Guo, Liz Guo, Jeevan Gyawali, Yuchen Hao, Daisy Shi He,                 alibaba. In Proceedings of the 1st International Workshop
+Samuel Hsia, Jie Hua, Yanzun Huang, Hongyi Jia, Rui Jian,               on Deep Learning Practice for High-Dimensional Sparse
+Jian Jin, Rahul Kindi, Changkyu Kim, Yejin Lee, Fu Li,                  Data, DLP-KDD ’19, New York, NY, USA, 2019. Asso-
+Hong Li, Shen Li, Wei Li, Zhijing Li, Xueting Liao, Emma                ciation for Computing Machinery. ISBN 9781450367837.
+Lin, Hao Lin, Jingzhou Liu, Xingyu Liu, Kai Londenberg,                 doi: 10.1145/3326937.3341261. URL https://doi.
+Liang Luo, Linjian Ma, Matt Ma, Yun Mao, Bert Maher,                    org/10.1145/3326937.3341261.
+Matthew Murphy, Satish Nadathur, Min Ni, Jongsoo Park,
+Jing Qian, Lijing Qin, Alex Singh, Timothy Shi, Dennis                Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. A
+van der Staay, Xiao Sun, Colin Taylor, Shin-Yeh Tsai, Ro-               simple framework for contrastive learning of visual rep-
+han Varma, Omkar Vichare, Alyssa Wang, Pengchao Wang,                   resentations. In Proceedings of the 37th International
+Shengzhi Wang, Wenting Wang, Xiaolong Wang, Zhiyong                     Conference on Machine Learning, ICML’20, 2020.
+Wang, Wei Wei, Bin Wen, Carole-Jean Wu, Eric Xu, Bi Xue,
+Zheng Yan, Chao Yang, Junjie Yang, Zimeng Yang, Chunx-                Cheng, H.-T., Koc, L., Harmsen, J., Shaked, T., Chandra, T.,
+ing Yin, Daniel Yin, Yiling You, Keke Zhai, Yanli Zhao,                 Aradhye, H., Anderson, G., Corrado, G., Chai, W., Ispir,
+Zhuoran Zhao, Hui Zhang, Jingjing Zhang, Lu Zhang, Lujia                M., Anil, R., Haque, Z., Hong, L., Jain, V., Liu, X., and
+Zhang, Na Zhang, Rui Zhang, Xiong Zhang, Ying Zhang,                    Shah, H. Wide & deep learning for recommender systems.
+Zhiyun Zhang, Charles Zheng, Erheng Zhong, Xin Zhuang.                  In Proceedings of the 1st Workshop on Deep Learning
+We would like to thank Shikha Kapoor, Rex Cheung, Lana                  for Recommender Systems, DLRS 2016, pp. 7–10, 2016.
+Dam, Ram Ramanathan, Nipun Mathur, Bo Feng, Yanhong                     ISBN 9781450347952.
+Wu, Zhaohui Guo, Hongjie Bai, Wen-Yun Yang, Zellux
+Wang, Arun Singh, Bruce Deng, Yisong Song, Haotian Wu,                Child, R., Gray, S., Radford, A., and Sutskever, I. Gener-
+Meihong Wang for product support, and Joseph Laria, Ak-                 ating long sequences with sparse transformers. CoRR,
+shay Hegde, Abha Jain, Raj Ganapathy for assistance with                abs/1904.10509, 2019. URL http://arxiv.org/
+program management. Finally, we would like to thank Ajit                abs/1904.10509.
+Mathews, Shilin Ding, Hong Yan, Lars Backstrom for their
+leadership support, and insightful discussions with Andrew            Covington, P., Adams, J., and Sargin, E. Deep neural net-
+Tulloch, Liang Xiong, Kaushik Veeraraghavan, and Gaofeng                works for youtube recommendations. In Proceedings
+Zhao.                                                                   of the 10th ACM Conference on Recommender Systems,
+                                                                        RecSys ’16, pp. 191–198, 2016. ISBN 9781450340359.
+
+                                                                 10
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+Cui, Z., Ma, J., Zhou, C., Zhou, J., and Yang, H. M6-rec:             Gu, A., Goel, K., and Ré, C. Efficiently modeling long
+  Generative pretrained language models are open-ended                  sequences with structured state spaces. In The Tenth
+  recommender systems, 2022.                                           International Conference on Learning Representations,
+                                                                       ICLR 2022, Virtual Event, April 25-29, 2022. OpenRe-
+Dallmann, A., Zoller, D., and Hotho, A. A case study on                view.net, 2022. URL https://openreview.net/
+  sampling strategies for evaluating neural sequential item             forum?id=uYLFoz1vlAC.
+  recommendation models. In Proceedings of the 15th
+ ACM Conference on Recommender Systems, RecSys ’21,                   Guo, H., Tang, R., Ye, Y., Li, Z., and He, X. Deepfm:
+  pp. 505–514, 2021. ISBN 9781450384582.                               A factorization-machine based neural network for ctr
+                                                                        prediction. In Proceedings of the 26th International
+Dao, T. Flashattention-2: Faster attention with better paral-          Joint Conference on Artificial Intelligence, IJCAI’17, pp.
+  lelism and work partitioning, 2023.                                  1725–1731, 2017. ISBN 9780999241103.
+
+Dao, T., Fu, D. Y., Ermon, S., Rudra, A., and Ré, C. FlashAt-        Gupta, M. R., Bengio, S., and Weston, J. Training highly
+  tention: Fast and memory-efficient exact attention with               multiclass classifiers. J. Mach. Learn. Res., 15(1):
+  IO-awareness. In Advances in Neural Information Pro-                 1461–1492, jan 2014. ISSN 1532-4435.
+  cessing Systems, 2022.                                              He, K., Zhang, X., Ren, S., and Sun, J. Deep resid-
+                                                                        ual learning for image recognition. arXiv preprint
+Devlin, J., Chang, M., Lee, K., and Toutanova, K. BERT:
+                                                                        arXiv:1512.03385, 2015.
+  pre-training of deep bidirectional transformers for lan-
+  guage understanding. In Burstein, J., Doran, C., and                He, X., Pan, J., Jin, O., Xu, T., Liu, B., Xu, T., Shi, Y.,
+  Solorio, T. (eds.), Proceedings of the 2019 Conference of             Atallah, A., Herbrich, R., Bowers, S., and Candela, J. Q.
+  the North American Chapter of the Association for Com-                Practical lessons from predicting clicks on ads at face-
+  putational Linguistics: Human Language Technologies,                  book. In ADKDD’14: Proceedings of the Eighth Interna-
+  NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7,                       tional Workshop on Data Mining for Online Advertising,
+  2019, Volume 1 (Long and Short Papers), pp. 4171–4186.                New York, NY, USA, 2014. Association for Computing
+  Association for Computational Linguistics, 2019. doi:                 Machinery. ISBN 9781450329996.
+ 10.18653/v1/n19-1423. URL https://doi.org/
+  10.18653/v1/n19-1423.                                               Hidasi, B., Karatzoglou, A., Baltrunas, L., and Tikk, D.
+                                                                        Session-based recommendations with recurrent neural
+Eksombatchai, C., Jindal, P., Liu, J. Z., Liu, Y., Sharma, R.,          networks. In Bengio, Y. and LeCun, Y. (eds.), 4th Inter-
+  Sugnet, C., Ulrich, M., and Leskovec, J. Pixie: A system              national Conference on Learning Representations, ICLR
+  for recommending 3+ billion items to 200+ million users               2016, San Juan, Puerto Rico, May 2-4, 2016, Conference
+  in real-time. In Proceedings of the 2018 World Wide Web               Track Proceedings, 2016. URL http://arxiv.org/
+  Conference, WWW ’18, pp. 1775–1784, 2018. ISBN                        abs/1511.06939.
+  9781450356398.
+                                                                      Hou, Y., Zhang, J., Lin, Z., Lu, H., Xie, R., McAuley, J., and
+Elfwing, S., Uchibe, E., and Doya, K. Sigmoid-weighted                  Zhao, W. X. Large language models are zero-shot rankers
+  linear units for neural network function approximation                for recommender systems. In Advances in Information
+  in reinforcement learning. CoRR, abs/1702.03118, 2017.                Retrieval - 46th European Conference on IR Research,
+  URL http://arxiv.org/abs/1702.03118.                                  ECIR 2024, 2024.
+
+                                                                      Hua, W., Dai, Z., Liu, H., and Le, Q. V. Transformer qual-
+Gao, W., Fan, X., Wang, C., Sun, J., Jia, K., Xiao, W., Ding,
+                                                                        ity in linear time. In Chaudhuri, K., Jegelka, S., Song,
+  R., Bin, X., Yang, H., and Liu, X. Learning an end-to-end
+                                                                        L., Szepesvári, C., Niu, G., and Sabato, S. (eds.), Inter-
+  structure for retrieval in large-scale recommendations. In
+                                                                        national Conference on Machine Learning, ICML 2022,
+  Proceedings of the 30th ACM International Conference
+                                                                       17-23 July 2022, Baltimore, Maryland, USA, volume 162
+  on Information and Knowledge Management, CIKM ’21,
+                                                                        of Proceedings of Machine Learning Research, pp. 9099–
+  pp. 524–533, 2021. ISBN 9781450384469.
+                                                                        9117. PMLR, 2022. URL https://proceedings.
+Gillenwater, J., Kulesza, A., Fox, E., and Taskar, B.                   mlr.press/v162/hua22a.html.
+  Expectation-maximization for learning determinantal                 Huang, G., Sun, Y., Liu, Z., Sedra, D., and Weinberger, K.
+  point processes. In Proceedings of the 27th International             Deep networks with stochastic depth, 2016.
+  Conference on Neural Information Processing Systems
+ - Volume 2, NIPS’14, pp. 3149–3157, Cambridge, MA,                   Jegou, H., Douze, M., and Schmid, C. Product quantization
+  USA, 2014. MIT Press.                                                 for nearest neighbor search. IEEE Trans. Pattern Anal.
+
+                                                                 11
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+  Mach. Intell., 33(1):117–128, jan 2011. ISSN 0162-8828.             L., Yang, J. A., Gao, L., Ivchenko, D., Basant, A., Hu,
+  doi: 10.1109/TPAMI.2010.57. URL https://doi.                        Y., Yang, J., Ardestani, E. K., Wang, X., Komuravelli,
+  org/10.1109/TPAMI.2010.57.                                          R., Chu, C.-H., Yilmaz, S., Li, H., Qian, J., Feng, Z.,
+                                                                      Ma, Y., Yang, J., Wen, E., Li, H., Yang, L., Sun, C.,
+Kang, W.-C. and McAuley, J. Self-attentive sequential                 Zhao, W., Melts, D., Dhulipala, K., Kishore, K., Graf,
+  recommendation. In 2018 International Conference on                 T., Eisenman, A., Matam, K. K., Gangidi, A., Chen,
+  Data Mining (ICDM), pp. 197–206, 2018.                              G. J., Krishnan, M., Nayak, A., Nair, K., Muthiah, B.,
+Kaplan, J., McCandlish, S., Henighan, T., Brown, T. B.,               khorashadi, M., Bhattacharya, P., Lapukhov, P., Nau-
+  Chess, B., Child, R., Gray, S., Radford, A., Wu, J., and            mov, M., Mathews, A., Qiao, L., Smelyanskiy, M., Jia,
+  Amodei, D. Scaling laws for neural language models.                 B., and Rao, V. Software-hardware co-design for fast
+  CoRR, abs/2001.08361, 2020. URL https://arxiv.                      and scalable training of deep learning recommendation
+  org/abs/2001.08361.                                                 models. In Proceedings of the 49th Annual Interna-
+                                                                      tional Symposium on Computer Architecture, ISCA ’22,
+Katharopoulos, A., Vyas, A., Pappas, N., and Fleuret, F.              pp. 993–1011, New York, NY, USA, 2022. Associa-
+  Transformers are rnns: Fast autoregressive transformers             tion for Computing Machinery. ISBN 9781450386104.
+  with linear attention. In Proceedings of the 37th Inter-            doi: 10.1145/3470496.3533727. URL https://doi.
+  national Conference on Machine Learning, ICML’20.                   org/10.1145/3470496.3533727.
+  JMLR.org, 2020.
+                                                                    Peng, B., Quesnelle, J., Fan, H., and Shippole, E. YaRN: Ef-
+Khudia, D., Huang, J., Basu, P., Deng, S., Liu, H., Park,             ficient context window extension of large language mod-
+ J., and Smelyanskiy, M. Fbgemm: Enabling high-                       els. In The Twelfth International Conference on Learning
+  performance low-precision deep learning inference. arXiv            Representations, 2024. URL https://openreview.
+  preprint arXiv:2101.05615, 2021.                                    net/forum?id=wHBfxhZu1u.
+Klenitskiy, A. and Vasilev, A. Turning dross into gold loss:
+  is bert4rec really better than sasrec? In Proceedings of the      Pope, R., Douglas, S., Chowdhery, A., Devlin, J., Bradbury,
+  17th ACM Conference on Recommender Systems, RecSys                  J., Levskaya, A., Heek, J., Xiao, K., Agrawal, S., and
+  ’23, pp. 1120–1125, New York, NY, USA, 2023. Associa-               Dean, J. Efficiently scaling transformer inference, 2022.
+  tion for Computing Machinery. ISBN 9798400702419.
+  doi: 10.1145/3604915.3610644. URL https://doi.                    Press, O., Smith, N. A., and Lewis, M. Train short, test
+  org/10.1145/3604915.3610644.                                        long: Attention with linear biases enables input length
+                                                                      extrapolation. In The Tenth International Conference
+Korthikanti, V., Casper, J., Lym, S., McAfee, L., Andersch,           on Learning Representations, ICLR 2022, Virtual Event,
+  M., Shoeybi, M., and Catanzaro, B. Reducing activation              April 25-29, 2022. OpenReview.net, 2022. URL https:
+  recomputation in large transformer models, 2022.                    //openreview.net/forum?id=R8sQPpGCv0.
+Li, C., Chang, E., Garcia-Molina, H., and Wiederhold,
+                                                                    Rabe, M. N. and Staats, C. Self-attention does not need
+  G. Clustering for approximate similarity search in high-
+                                                                      o(n2 ) memory, 2021.
+  dimensional spaces. IEEE Transactions on Knowledge
+  and Data Engineering, 14(4):792–808, 2002.
+                                                                    Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S.,
+Li, J., Wang, M., Li, J., Fu, J., Shen, X., Shang, J., and            Matena, M., Zhou, Y., Li, W., and Liu, P. J. Exploring
+  McAuley, J. Text is all you need: Learning language                 the limits of transfer learning with a unified text-to-text
+  representations for sequential recommendation. In KDD,              transformer. J. Mach. Learn. Res., 21(1), jan 2020. ISSN
+  2023.                                                               1532-4435.
+
+Liu, Z., Zou, L., Zou, X., Wang, C., Zhang, B., Tang, D.,           Rendle, S. Factorization machines. In 2010 IEEE Inter-
+  Zhu, B., Zhu, Y., Wu, P., Wang, K., and Cheng, Y. Mono-             national Conference on Data Mining (ICDM), pp. 995–
+  lith: Real time recommendation system with collisionless            1000, 2010. doi: 10.1109/ICDM.2010.127.
+  embedding table, 2022.
+
+Ma, J., Zhao, Z., Yi, X., Chen, J., Hong, L., and Chi, E. H.        Rendle, S., Krichene, W., Zhang, L., and Anderson, J. Neu-
+ Modeling task relationships in multi-task learning with              ral collaborative filtering vs. matrix factorization revisited.
+ multi-gate mixture-of-experts. KDD ’18, 2018.                        In Fourteenth ACM Conference on Recommender Systems
+                                                                      (RecSys’20), pp. 240–248, 2020. ISBN 9781450375832.
+Mudigere, D., Hao, Y., Huang, J., Jia, Z., Tulloch, A.,
+ Sridharan, S., Liu, X., Ozdal, M., Nie, J., Park, J., Luo,         Shazeer, N. Glu variants improve transformer, 2020.
+
+                                                               12
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+Shin, K., Kwak, H., Kim, S. Y., Ramström, M. N., Jeong,                   Bhosale, S., Bikel, D., Blecher, L., Ferrer, C. C., Chen,
+  J., Ha, J.-W., and Kim, K.-M. Scaling law for recommen-                  M., Cucurull, G., Esiobu, D., Fernandes, J., Fu, J., Fu, W.,
+  dation models: towards general-purpose user representa-                  Fuller, B., Gao, C., Goswami, V., Goyal, N., Hartshorn,
+  tions. In Proceedings of the Thirty-Seventh AAAI Con-                    A., Hosseini, S., Hou, R., Inan, H., Kardas, M., Kerkez,
+  ference on Artificial Intelligence and Thirty-Fifth Confer-              V., Khabsa, M., Kloumann, I., Korenev, A., Koura, P. S.,
+  ence on Innovative Applications of Artificial Intelligence               Lachaux, M.-A., Lavril, T., Lee, J., Liskovich, D., Lu, Y.,
+  and Thirteenth Symposium on Educational Advances                         Mao, Y., Martinet, X., Mihaylov, T., Mishra, P., Molybog,
+  in Artificial Intelligence, AAAI’23/IAAI’23/EAAI’23.                     I., Nie, Y., Poulton, A., Reizenstein, J., Rungta, R., Saladi,
+  AAAI Press, 2023. ISBN 978-1-57735-880-0. doi:                           K., Schelten, A., Silva, R., Smith, E. M., Subramanian, R.,
+  10.1609/aaai.v37i4.25582. URL https://doi.org/                           Tan, X. E., Tang, B., Taylor, R., Williams, A., Kuan, J. X.,
+  10.1609/aaai.v37i4.25582.                                                Xu, P., Yan, Z., Zarov, I., Zhang, Y., Fan, A., Kambadur,
+                                                                           M., Narang, S., Rodriguez, A., Stojnic, R., Edunov, S.,
+Shrivastava, A. and Li, P. Asymmetric lsh (alsh) for sub-                  and Scialom, T. Llama 2: Open foundation and fine-tuned
+  linear time maximum inner product search (mips). In                      chat models, 2023b.
+  Advances in Neural Information Processing Systems, vol-
+  ume 27, 2014.                                                          Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones,
+                                                                           L., Gomez, A. N., Kaiser, L., and Polosukhin, I. Attention
+Sileo, D., Vossen, W., and Raymaekers, R. Zero-shot rec-                   is all you need. In Proceedings of the 31st International
+   ommendation as language modeling. In Hagen, M.,                         Conference on Neural Information Processing Systems,
+  Verberne, S., Macdonald, C., Seifert, C., Balog, K.,                     NIPS’17, pp. 6000–6010, 2017. ISBN 9781510860964.
+   Nørvåg, K., and Setty, V. (eds.), Advances in Informa-
+   tion Retrieval - 44th European Conference on IR Re-                   Wang, R., Shivanna, R., Cheng, D., Jain, S., Lin, D., Hong,
+   search, ECIR 2022, Stavanger, Norway, April 10-14,                     L., and Chi, E. Dcn v2: Improved deep & cross network
+  2022, Proceedings, Part II, volume 13186 of Lecture                     and practical lessons for web-scale learning to rank sys-
+  Notes in Computer Science, pp. 223–230. Springer, 2022.                 tems. In Proceedings of the Web Conference 2021, WWW
+   doi: 10.1007/978-3-030-99739-7\ 26. URL https://                       ’21, pp. 1785–1797, New York, NY, USA, 2021. Associa-
+   doi.org/10.1007/978-3-030-99739-7_26.                                  tion for Computing Machinery. ISBN 9781450383127.
+                                                                          doi: 10.1145/3442381.3450078. URL https://doi.
+Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., and Liu,                  org/10.1145/3442381.3450078.
+  Y. Roformer: Enhanced transformer with rotary position
+  embedding, 2023.                                                       Wang, Z., Zhao, L., Jiang, B., Zhou, G., Zhu, X., and Gai, K.
+                                                                          Cold: Towards the next generation of pre-ranking system,
+Sun, F., Liu, J., Wu, J., Pei, C., Lin, X., Ou, W., and Jiang, P.         2020.
+  Bert4rec: Sequential recommendation with bidirectional
+  encoder representations from transformer. In Proceedings               Xia, X., Eksombatchai, P., Pancha, N., Badani, D. D.,
+  of the 28th ACM International Conference on Information                  Wang, P.-W., Gu, N., Joshi, S. V., Farahpour, N., Zhang,
+  and Knowledge Management, CIKM ’19, pp. 1441–1450,                       Z., and Zhai, A. Transact: Transformer-based real-
+  2019. ISBN 9781450369763.                                                time user action model for recommendation at pinterest.
+                                                                           In Proceedings of the 29th ACM SIGKDD Conference
+Tang, H., Liu, J., Zhao, M., and Gong, X. Progres-                         on Knowledge Discovery and Data Mining, KDD ’23,
+  sive layered extraction (ple): A novel multi-task learn-                 pp. 5249–5259, New York, NY, USA, 2023. Associa-
+  ing (mtl) model for personalized recommendations.                        tion for Computing Machinery. ISBN 9798400701030.
+  In Proceedings of the 14th ACM Conference on Rec-                        doi: 10.1145/3580305.3599918. URL https://doi.
+  ommender Systems, RecSys ’20, pp. 269–278, New                           org/10.1145/3580305.3599918.
+  York, NY, USA, 2020. Association for Computing
+  Machinery. ISBN 9781450375832. doi: 10.1145/                           Xiao, J., Ye, H., He, X., Zhang, H., Wu, F., and Chua,
+  3383313.3412236. URL https://doi.org/10.                                 T.-S. Attentional factorization machines: Learning the
+  1145/3383313.3412236.                                                    weight of feature interactions via attention networks. In
+                                                                           Proceedings of the 26th International Joint Conference on
+Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux,               Artificial Intelligence, IJCAI’17, pp. 3119–3125. AAAI
+  M.-A., Lacroix, T., Rozière, B., Goyal, N., Hambro, E.,                 Press, 2017. ISBN 9780999241103.
+  Azhar, F., Rodriguez, A., Joulin, A., Grave, E., and Lam-
+  ple, G. Llama: Open and efficient foundation language                  Xiong, R., Yang, Y., He, D., Zheng, K., Zheng, S., Xing, C.,
+  models, 2023a.                                                           Zhang, H., Lan, Y., Wang, L., and Liu, T.-Y. On layer
+                                                                           normalization in the transformer architecture. In Proceed-
+Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi,                 ings of the 37th International Conference on Machine
+  A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P.,                  Learning, ICML’20. JMLR.org, 2020.
+
+                                                                    13
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+Yang, J., Yi, X., Zhiyuan Cheng, D., Hong, L., Li, Y., Xi-              mutual information maximization. In Proceedings of
+  aoming Wang, S., Xu, T., and Chi, E. H. Mixed negative                the 29th ACM International Conference on Information
+  sampling for learning two-tower neural networks in rec-               & Knowledge Management, CIKM ’20, pp. 1893–1902,
+  ommendations. In Companion Proceedings of the Web                     New York, NY, USA, 2020. Association for Comput-
+  Conference 2020, WWW ’20, pp. 441–447, 2020. ISBN                     ing Machinery. ISBN 9781450368599. doi: 10.1145/
+  9781450370240.                                                        3340531.3411954. URL https://doi.org/10.
+                                                                        1145/3340531.3411954.
+Zhai, J., Lou, Y., and Gehrke, J. Atlas: A probabilistic algo-
+  rithm for high dimensional similarity search. In Proceed-           Zhuo, J., Xu, Z., Dai, W., Zhu, H., Li, H., Xu, J., and Gai,
+  ings of the 2011 ACM SIGMOD International Conference                  K. Learning optimal tree models under beam search.
+  on Management of Data, SIGMOD ’11, pp. 997–1008,                      In Proceedings of the 37th International Conference on
+  2011. ISBN 9781450306614.                                             Machine Learning, ICML’20. JMLR.org, 2020.
+Zhai, J., Gong, Z., Wang, Y., Sun, X., Yan, Z., Li, F., and
+  Liu, X. Revisiting neural retrieval on accelerators. In
+  Proceedings of the 29th ACM SIGKDD Conference on
+  Knowledge Discovery and Data Mining, KDD ’23, pp.
+  5520–5531, New York, NY, USA, 2023a. Association for
+  Computing Machinery. ISBN 9798400701030. doi: 10.
+  1145/3580305.3599897. URL https://doi.org/
+  10.1145/3580305.3599897.
+Zhai, Y., Jiang, C., Wang, L., Jia, X., Zhang, S., Chen,
+  Z., Liu, X., and Zhu, Y. Bytetransformer: A high-
+  performance transformer boosted for variable-length
+  inputs. In 2023 IEEE International Parallel and Dis-
+  tributed Processing Symposium (IPDPS), pp. 344–355,
+  Los Alamitos, CA, USA, may 2023b. IEEE Computer
+  Society. doi: 10.1109/IPDPS54959.2023.00042. URL
+  https://doi.ieeecomputersociety.org/
+  10.1109/IPDPS54959.2023.00042.
+Zhang, B., Luo, L., Liu, X., Li, J., Chen, Z., Zhang, W., Wei,
+  X., Hao, Y., Tsang, M., Wang, W., Liu, Y., Li, H., Badr,
+  Y., Park, J., Yang, J., Mudigere, D., and Wen, E. Dhen: A
+  deep and hierarchical ensemble network for large-scale
+  click-through rate prediction, 2022.
+Zhao, X., Xia, L., Zhang, L., Ding, Z., Yin, D., and
+  Tang, J. Deep reinforcement learning for page-wise
+  recommendations. In Proceedings of the 12th ACM
+  Conference on Recommender Systems, RecSys ’18, pp.
+  95–103, New York, NY, USA, 2018. Association for
+  Computing Machinery. ISBN 9781450359016. doi: 10.
+  1145/3240323.3240374. URL https://doi.org/
+  10.1145/3240323.3240374.
+Zhao, Z., Yang, Y., Wang, W., Liu, C., Shi, Y., Hu, W.,
+  Zhang, H., and Yang, S. Breaking the curse of quality
+  saturation with user-centric ranking, 2023.
+Zhou, G., Zhu, X., Song, C., Fan, Y., Zhu, H., Ma, X., Yan,
+  Y., Jin, J., Li, H., and Gai, K. Deep interest network for
+  click-through rate prediction. KDD ’18, 2018.
+Zhou, K., Wang, H., Zhao, W. X., Zhu, Y., Wang, S.,
+  Zhang, F., Wang, Z., and Wen, J.-R. S3-rec: Self-
+  supervised learning for sequential recommendation with
+
+                                                                 14
+        Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+A. Notations
+We summarize key notations used in this paper in Table 8 and Table 9.
+
+
+      Symbol            Description
+                        The k-th training example (k is ordered globally) emitted by the feature logging system at time tj . In
+                        a typical DLRM recommendation system, after the user consumes some content Φi (by responding
+                        with an action ai such as skip, video completion and share), the feature logging system joins the tuple
+      Ψk (tj )
+                        (Φi , ai ) with the features used to rank Φi , and emits (Φi , ai , features for Φi ) as a training example
+                        Ψk (tj ). As discussed in Section 2.3, DLRMs and GRs deal with different numbers of training
+                        examples, with the number of examples in GRs typically being 1-2 orders of magnitude smaller.
+    nc (nc,i )          Number of contents that user has interacted with (of user/sample i).
+ Φ0 , . . . , Φnc −1    List of contents that a user has interacted with, in the context of a recommendation system.
+                        List of user actions corresponding to Φi s. When all predicted events are binary, each action can be
+  a0 , . . . , anc −1   considered a multi-hot vector over (atomic) events such as like, share, comment, image view, video
+                        initialization, video completion, hide, etc.
+                        Categorical features in DLRMs, in Figure 2. E0 , E1 , . . ., E7 , E8 , and F0 , F1 , . . ., F7 represent
+                        transformations of (Φ0 , a0 , t0 ), . . . , (Φnc −1 , anc −1 , tnc −1 ) obtained at various points in time via
+        E, F            feature extraction (e.g., most recent 10 liked images, most similar 50 urls that the user clicked on in
+                        the past compared to the current candidate, etc.). “merge & sequentialize” denotes the (virtual)
+                        reverse process of obtaining the raw engagement series (Φ0 , a0 , t0 ), . . . , (Φnc −1 , anc −1 , tnc −1 ).
+                        Categorical features in DLRMs, in Figure 2 that are not related to user-content engagements. These
+                        features (e.g., demographics or followed creators) are merged into the main time series (list of
+       G, H
+                        contents user engaged with, e.g., Φ0 , a0 , . . . , Φnc −1 , anc −1 ), as discussed in Section 2.1 and
+                        illustrated in Figure 2.
+                        Number of tokens in the sequential transduction task (of user/sample i). While O(n) = O(nc ), n can
+       n (ni )
+                        differ from nc even without any non-interaction related categorical features; see e.g., Table 1.
+  x0 , . . . , xn−1     List of input tokens in the sequential transduction task.
+  y0 , . . . , yn−1     List of output tokens in the sequential transduction task.
+  t0 , . . . , tn−1     List of timestamps corresponding to when x0 , . . . , xn−1 were observed.
+       X, Xc            Vocabulary of all input/output tokens (X) and its content subset (Xc ).
+      N , Nc            maxi ni , maxi nc,i .
+          ut            User representation at time t.
+ su (ni ), ŝu (ni )    Sampling rate for user i, used in generative training (Section 2.3).
+          d             Model dimension (embedding dimension).
+         dqk            Attention dimension size in HSTU and Transformers. This applies to Q(X) and K(X) in Equation (1).
+         dv             Value dimension size in HSTU. For Transformers, we typically have dqk = dv .
+                        Hidden dimension size in pointwise feedforward layers of Transformers. HSTU does not utilize
+         df f
+                        feedforward layers; see U (X) below.
+          h             Number of attention heads.
+                        Number of layers in HSTU. For Transformers, attention and pointwise feedforward layers together
+           l
+                        constitute a layer.
+
+                                         Table 8. Table of Notations (continued on the next page).
+
+
+
+B. Generative Recommenders: Background and Formulations
+Many readers are likely more familiar with classical Deep Learning Recommendation Models (DLRMs) (Mudigere et al.,
+2022) given its popularity from YouTube DNN days (Covington et al., 2016) and its widespread usage in every single
+large online content and e-commerce platform (Cheng et al., 2016; Zhou et al., 2018; Wang et al., 2021; Chang et al.,
+2023; Xia et al., 2023; Zhai et al., 2023a). DLRMs operate on top of heterogeneous feature spaces using various neural
+
+                                                                    15
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+        Symbol             Description
+                           Input to an HSTU layer. In standard terminology (before batching), X ∈ RN ×d assuming we
+           X
+                           have a input sequence containing N tokens.
+                           Query, key, value in HSTU obtained for a given input X based on Equation (1). The definition
+ Q(X), K(X), V (X)         is similar to Q, K, and V in standard Transformers. Q(X), K(X) ∈ Rh×N ×dqk , and
+                           V (X) ∈ Rh×N ×dv .
+                           HSTU uses U (X) to “gate” attention-pooled values (V (X)) in Equation (3), which together
+         U (X)
+                           with f2 (·), enables HSTU to avoid feedforward layers altogether. U (X) ∈ Rh×N ×dv .
+         A(X)              Attention tensor obtained for input X. A(X) ∈ Rh×N ×N .
+         Y (X)             Output of a HSTU layer obtained for the input X. Y (X) ∈ Rd .
+                           The operation that splits a tensor into chunks. ϕ1 (f1 (X))) ∈ RN ×(2hdqk +2hdv )
+                           in Equation (1); we obtain U (X), V (X) (both of shape h × N × dv ), Q(X), K(X) (both of
+        Split(·)
+                           shape h × N × dqk ) by splitting the larger tensor (and permuting dimensions) with
+                           U (X), V (X), Q(X), K(X) = Split(ϕ1 (f1 (X))).
+                           relative attention bias that incorporates both positional (Raffel et al., 2020) and temporal
+                           information (based on the time when the tokens are observed, t0 , . . . , tn−1 ; one possible
+         rabp,t
+                           implementation is to apply some bucketization function to (tj − ti ) for (i, j)). In practice, we
+                           share rabp,t across different attention heads within a layer, hence rabp,t ∈ R1×N ×N .
+           α               Parameter controlling sparsity in the Stochastic Length algorithm used in HSTU (Section 3.2).
+           R               Register size on GPUs, in the context of the HSTU algorithm discussed in Section 3.2.
+           m               Number of candidates considered in a recommendation system’s ranking stage.
+           bm              Microbatch size, in the M-FALCON algorithm discussed in Section 3.4.
+                                               Table 9. Table of Notations (continued)
+
+
+
+
+networks including feature interaction modules (Guo et al., 2017; Xiao et al., 2017; Wang et al., 2021), sequential pooling or
+target-aware pairwise attention modules (Hidasi et al., 2016; Zhou et al., 2018; Chang et al., 2023) and advanced multi-expert
+multi-task modules (Ma et al., 2018; Tang et al., 2020). We hence provided an overview of Generative Recommenders
+(GRs) by contrasting them with classical DLRMs explicitly in Section 2 and Section 3. In this section, we give the readers
+an alternative perspective starting from the classical sequential recommender literature.
+
+B.1. Background: Sequential Recommendations in Academia and Industry
+B.1.1. ACADEMIC R ESEARCH (T RADITIONAL S EQUENTIAL R ECOMMENDER S ETTINGS )
+Recurrent neural networks (RNNs) were first applied to recommendation scenarios in GRU4Rec (Hidasi et al., 2016).
+Hidasi et al. (2016) considered Gated Recurrent Units (GRUs) and applied them over two datasets, RecSys Challenge 2015 2
+and VIDEO (a proprietary dataset). In both cases, only positive events (clicked e-commerce items or videos where users
+spent at least a certain amount of time watching) were kept as part of the input sequence. We further observe that in a
+classical industrial-scale two-stage recommendation system setup consisting of retrieval and ranking stages (Covington
+et al., 2016), the task that Hidasi et al. (2016) solved primarily maps to the retrieval task.
+Transformers, sequential transduction architectures, and their variants. Advances in sequential transduction ar-
+chitectures in later years, in particular Transformers (Vaswani et al., 2017), have motivated similar advancements in
+recommendation systems. SASRec (Kang & McAuley, 2018) first applied Transformers in an autoregressive setting. They
+considered the presence of a review or rating as positive feedback, thereby converting classical datasets like Amazon
+Reviews 3 and MovieLens 4 to sequences of positive items, similar to GRU4Rec. A binary cross entropy loss was employed,
+where positive target is defined as the next “positive” item (recall this is in essence just presence of a review or rating), and
+negative target is randomly sampled from the item corpus X = Xc .
+   2
+     http://2015.recsyschallenge.com/
+   3
+     https://jmcauley.ucsd.edu/data/amazon/
+   4
+     https://grouplens.org/datasets/movielens/1m/, https://grouplens.org/datasets/movielens/20m/
+
+                                                                 16
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+Most subsequent research were built upon similar settings as GRU4Rec (Hidasi et al., 2016) and SASRec (Kang & McAuley,
+2018) discussed above, such as BERT4Rec (Sun et al., 2019) applying bidirectional encoder setting from BERT (Devlin
+et al., 2019), S3Rec (Zhou et al., 2020) introducing an explicit pre-training stage, and so on.
+
+B.1.2. I NDUSTRIAL A PPLICATIONS AS PART OF D EEP L EARNING R ECOMMENDATION M ODELS (DLRM S ).
+Sequential approaches, including sequential encoders and pairwise attention modules, have been widely applied in industrial
+settings due to their ability to enhance user representations as part of DLRMs. DLRMs commonly use relatively small
+sequence lengths, such as 20 in BST (Chen et al., 2019), 1,000 in DIN (Zhou et al., 2018), and 100 in TransAct (Xia et al.,
+2023). We observe that these are 1-3 orders of magnitude smaller compared with 8,192 in this work (Section 4.3).
+Despite using short sequence lengths, most DLRMs can successfully capture long-term user preferences. This can be
+attributed to two key aspects. First, precomputed user profiles/embeddings (Xia et al., 2023) or external vector stores (Chang
+et al., 2023) are commonly used in modern DLRMs, both of which effectively extend lookback windows. Second, a
+significant number of contextual-, user-, and item-side features were generally employed (Zhou et al., 2018; Chen et al.,
+2019; Chang et al., 2023; Xia et al., 2023) and various heterogeneous networks, such as FMs (Xiao et al., 2017; Guo et al.,
+2017), DCNs (Wang et al., 2021), MoEs, etc. are used to transform representations and combine outputs.
+In contrast to sequential settings discussed in Appendix B.1.1, all major industrial work defines loss over (user/request,
+candidate item) pairs. In the ranking setting, a multi-task binary cross-entropy loss is commonly used. In the retrieval setting,
+two tower setting (Covington et al., 2016) remains the dominant approach. Recent work has investigated representing the
+next item to recommend as a probability distribution over a sequence of (sub-)tokens, such as OTM (Zhuo et al., 2020),
+and DR (Gao et al., 2021) (note that in other recent work, the same setting is sometimes denoted as “generative retrieval”).
+They commonly utilize beam search to decode the item from sub-tokens. Advanced learned similarity functions, such as
+mixture-of-logits (Zhai et al., 2023a), have also been proposed and deployed as an alternative to two-tower setting and beam
+search given proliferation of modern accelerators such as GPUs, custom ASICs, and TPUs.
+From a problem formulation perspective, we consider all work discussed above part of DLRMs (Mudigere et al., 2022)
+given the model architectures, features used, and losses used differ significantly from academic sequential recommender
+research discussed in Appendix B.1.1. It’s also worth remarking that there have been no successful applications of fully
+sequential ranking settings in industry, especially not at billion daily active users (DAU) scale, prior to this work.
+
+B.2. Formulations: Ranking and Retrieval as Sequential Transduction Tasks in Generative Recommenders (GRs)
+We next discuss three limitations in the traditional sequential recommender settings and DLRM settings, and how Generative
+Recommenders (GRs) address them from a problem formulation perspective.
+Ignorance of features other than user-interacted items. Past sequential formulations only consider contents (items)
+users explicitly interacted with (Hidasi et al., 2016; Kang & McAuley, 2018; Sun et al., 2019; Zhou et al., 2020), while
+industry-scale recommendation systems prior to GRs are trained over a vast number of features to enhance the representation
+of users and contents (Covington et al., 2016; Cheng et al., 2016; Zhou et al., 2018; Chen et al., 2019; Chang et al., 2023; Xia
+et al., 2023; Zhai et al., 2023a). GR addresses this limitation by a) compressing other categorical features and merging them
+with the main time series, and b) capturing numerical features through cross-attention interaction utilizing a target-aware
+formulation as discussed in Section 2.1 and Figure 2. We validate this by showing that the traditional “interaction-only”
+formulation that ignores such features degrades model quality significantly; experiment results can be found in the rows
+labeled “GR (interactions only)” in Table 7 and Table 6, where we show utilizing only interaction history led to a 1.3%
+decrease in hit rate@100 for retrieval and a 2.6% NE decrease in ranking (recall a 0.1% change in NE is significant, as
+discussed in Sections 4.1.2 and 4.3.1).
+User representations are computed in a target-independent setting. A second issue is most traditional sequential
+recommenders, including GRU4Rec (Hidasi et al., 2016), SASRec (Kang & McAuley, 2018), BERT4Rec (Sun et al., 2019),
+S3Rec (Zhou et al., 2020), etc. are formulated in a target-independent fashion where for a target item Φi , Φ0 , Φ1 , . . . , Φi−1
+are used as encoder input to compute user representations, which is then used to provide predictions. In contrast, most major
+DLRM approaches used in industrial settings formulated the sequential modules used in a target-aware fashion, with the
+ability to incorporate “target” (ranking candidate) information into the user representations. These include DIN (Zhou et al.,
+2018) (Alibaba), BST (Chen et al., 2019) (Alibaba), TWIN (Chang et al., 2023) (Kwai), and TransAct (Xia et al., 2023)
+(Pinterest).
+
+
+                                                               17
+        Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+Generative Recommenders (GRs) combines the best of both worlds by interleaving the content and action sequences
+(Section 2.2) to enable applying target-aware attention in causal, autoregressive settings. We categorize and contrast prior
+work and this work in Table 10 5 .
+
+                Input for target                         Expected output
+                                                                                 Architecture                           Training Procedure
+                item i                                   for target item i
+                                                                                                                        Causal autoregressive
+       GRs      Φ0 , a0 , Φ1 , a1 , . . . , Φi           ai (target-aware)       Self-attention (HSTU)
+                                                                                                                        (streaming/single-pass)
+  GRU4Rec                                                                        RNNs (GRUs)                            Causal autoregressive
+                Φ0 , Φ1 , . . . , Φi−1                   Φi
+   SASRec                                                                        Self-attention (Transformers)          (multi-pass)
+ BERT4Rec       Φ0 , Φ1 , . . . , Φi−1
+                                                         Φi                      Self-attention (Transformers)          Sequential multi-pass 6
+  S3Rec         (at inference time)
+    DIN                                                                          Pairwise attention
+                                                         ai (target aware,
+    BST         Φ0 , Φ1 , . . . , Φi                                             Self-attention (Transformers)          Pointwise (generally
+                                                         implicitly as part
+   TWIN                                                                          Two-stage pairwise attention           streaming/single pass)
+                                                         of DLRMs)
+  TransAct      (Φ0 , a0 ), . . . , (Φi−1 , ai−1 ), Φi                           Self-attention (Transformers)
+
+Table 10. Comparison of prior work on sequential recommenders and GRs, in the ranking setting, with DLRMs included for completeness.
+
+
+Discriminative formulations restrict applicability of prior sequential recommender work to pointwise settings. Finally,
+traditional sequential recommenders are discriminative by design. Existing sequential recommender literature, including
+seminal work such as GRU4Rec and SASRec, model p(Φi |Φ0 , a0 , . . . , Φi−1 , ai−1 ), or the conditional distribution of the
+next item to recommend given users’ current states. On the other hand, we observe that there are two probabilistic processes
+in standard recommendation systems, namely the process of the recommendation system suggesting a content Φi (e.g., some
+photo or video) to the user, and the process of the user reacting to the suggested content Φi via some action ai (which can
+be a combination of like, video completion, skip, etc.).
+A generative approach needs to model the joint distribution over the sequence of suggested contents and user actions,
+or p(Φ0 , a0 , Φ1 , a1 , . . . , Φnc −1 , anc −1 ), as discussed in Section 2.2. Our proposal of Generative Recommenders enables
+modeling of such distributions, as shown in Table 11 (Figure 8). Note that the next action token (ai ) prediction task is
+exactly the GR ranking setting discussed in Table 1, whereas the next content (Φi ) prediction task is similar to the retrieval
+setting adapted to the interleaved setting, with the target changed in order to learn the input data distribution.
+
+                                         Task                         Specification (Inputs / Outputs / Length)
+                                                               xi s   Φ0 , a0 , Φ1 , a1 , . . . , Φnc −2 , anc −2 , Φnc −1 , anc −1
+                    Next action token (ai ) prediction         yi s   a0 , ∅, a1 , ∅, . . . , anc −2 , ∅, anc −1 , ∅
+                                                               n      2nc
+                                                               xi s   Φ0 , a0 , Φ1 , a1 , . . . , Φnc −2 , anc −2 , Φnc −1 , anc −1
+                    Next content token (Φi ) prediction        yi s   ∅, Φ1 , ∅, Φ2 , . . . , ∅, Φnc −1 , ∅, ∅
+                                                               n      2nc
+
+              Table 11. Generative modeling over p(Φ0 , a0 , . . . , Φnc −1 , anc −1 ). An illustration is provided in Figure 8.
+
+Importantly, this formulation not only enables proper modeling of data distribution but further enables sampling sequences
+of items to recommend to the user directly via e.g., beam search. We hypothesize that this will lead to a superior approach
+compared with traditional listwise settings (e.g., DPP (Gillenwater et al., 2014) and RL (Zhao et al., 2018)), and we leave
+the full formulation and evaluation of such systems (briefly discussed in Section 6) as a future work.
+
+C. Evaluation: Synthetic Data
+As previously discussed in Section 3.1, standard softmax attention, due to its normalization factor, makes it challenging
+to capture intensity of user preferences which is important for user representation learning. This aspect is important in
+recommendation scenarios as the system may need to predict the intensity of engagements (e.g., number of future positive
+   5
+    Most large-scale industrial recommenders need to be trained in a streaming/single-pass setting due to vast amount of logged data.
+   6
+    BERT4Rec leverages multi-pass training with a mixture of Cloze and pointwise (last item) supervision losses; S3Rec utilizes
+multi-pass training with pre-training and finetuning as two separate stages.
+
+                                                                        18
+         Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+ Supervision (Expected                                                 Supervision (Expected
+                           Φ1     Φ2     ...   Φi+1    ...                                       a0   Φ1   a1    ...    anc-1
+    Next Item Φi)                                                        Next Token Φi/ai)
+
+
+   Prediction Layer                      ...           ...                Prediction Layer                       ...
+
+
+
+ Self-Attention Block(s)                                               Self-Attention Block(s)
+
+
+  Embedding Layers
+                                         ...           ...              Embedding Layers                         ...
+ (with optional MLPs)
+
+    Training Input         Φ0     Φ1           Φi            Φnc-1        Training Input
+                                         ...           ...                                       Φ0   a0   Φ1    ...    Φnc-1   anc-1
+    Token Sequence         (a0)   (a1)         (ai)          (anc-1)      Token Sequence
+
+
+Figure 8. Comparison of traditional sequential recommenders (left) and Generative Recommenders (right). We illustrate sequential
+recommenders in causal autoregressive settings and GRs without contextual features to facilitate comparison. On the left hand side, the
+action types ai s are either ignored or combined with item information Φi s using MLPs, before going into self-attention blocks.
+
+
+actions on a particular topic) in addition to the relative ordering of items.
+To understand this behavior, we construct synthetic data following a Dirichlet Process that generates streaming data over a
+dynamic set of vocabulary. Dirichlet Process captures the behavior that ‘rich gets richer‘ in user engagement histories. We
+set up the synthetic experiment as follows:
+
+   • We randomly assign each one of 20,000 item ids to exactly one of 100 categories.
+   • We generate 1,000,000 records of length 128 each, with the first 90% being used for training and the final 10% used
+     for testing. To simulate the streaming training setting, we make the initial 40% of item ids available initially and
+     the rest available progressively at equal intervals; i.e., at record 500,000, the maximum id that can be sampled is
+     (40% + 60% ∗ 0.5) ∗ 20, 000 = 14, 000.
+
+   • We randomly select up to 5 categories out of 100 for each record and randomly sample a prior Hc over these 5
+     categories. We sequentially sample category for each position following a Dirichlet process over possible categories as
+     follows:
+           – for n > 1:
+              * with probability α/(α + n − 1), draw category c from Hc .
+              * with probability nc /(α + n − 1), draw category c, where nc is the number of previous items with category c.
+              * randomly sample an assigned item matching category c subject to streaming constraints.
+      where α is uniformly sampled at random from (1.0, 500.0).
+
+The results can be found in Table 2. We always ablate rabp,t for HSTU as this dataset does not have timestamps. We observe
+HSTU increasing Hit Rate@10 by more than 100% relative to standard Transformers. Importantly, replacing HSTU’s
+pointwise attention mechanism with softmax (“HSTU w/ Softmax”) also leads to a significant reduction in hit rate, verifying
+the importance of pointwise attention-like aggregation mechanisms.
+
+D. Evaluation: Traditional Sequential Recommender Settings
+Our evaluations in Section 4.1.1 focused on comparing HSTU with a state-of-the-art Transformer baseline, SASRec, utilizing
+latest training recipe. In this section, we further consider two other alternative approaches.
+Recurrent neural networks (RNNs). We consider the classical work on sequential recommender, GRU4Rec (Hidasi et al.,
+2016), to help readers understand how self-attention models, including Transformers and HSTU, compare to traditional
+RNNs, when all the latest modeling and training improvements are fully incorporated.
+Self-supervised sequential approaches. We consider the most popular work, BERT4Rec (Sun et al., 2019), to understand
+how bidirectional self-supervision (leveraged in BERT4Rec via a Cloze objective) compares with unidirectional causal
+autoregressive settings, such as SASRec and HSTU.
+
+                                                                   19
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+                 Method             HR@10              HR@50              HR@200              NDCG@10            NDCG@200
+                 SASRec (2023)      .2853              .5474              .7528               .1603              .2498
+                 BERT4Rec           .2843 (-0.4%)      –                  –                   .1537 (-4.1%)      –
+                 GRU4Rec            .2811 (-1.5%)      –                  –                   .1648 (+2.8%)      –
+     ML-1M
+                 HSTU               .3097 (+8.6%)      .5754 (+5.1%)      .7716 (+2.5%)       .1720 (+7.3%)      .2606 (+4.3%)
+                 HSTU-large         .3294 (+15.5%)     .5935 (+8.4%)      .7839 (+4.1%)       .1893 (+18.1%)     .2771 (+10.9%)
+                 SASRec (2023)      .2906              .5499              .7655               .1621              .2521
+                 BERT4Rec           .2816 (-3.4%)      –                  –                   .1703 (+5.1%)      –
+                 GRU4Rec            .2813 (-3.2%)      –                  –                   .1730 (+6.7%)      –
+    ML-20M
+                 HSTU               .3252 (+11.9%)     .5885 (+7.0%)      .7943 (+3.8%)       .1878 (+15.9%)     .2774 (+10.0%)
+                 HSTU-large         .3567 (+22.8%)     .6149 (+11.8%)     .8076 (+5.5%)       .2106 (+30.0%)     .2971 (+17.9%)
+                 SASRec (2023)      .0292              .0729              .1400               .0156              .0350
+     Books       HSTU               .0404 (+38.4%)     .0943 (+29.5%)     .1710 (+22.1%)      .0219 (+40.6%)     .0450 (+28.6%)
+                 HSTU-large         .0469 (+60.6%)     .1066 (+46.2%)     .1876 (+33.9%)      .0257 (+65.8%)     .0508 (+45.1%)
+
+Table 12. Evaluations of methods on public datasets in traditional sequential recommender settings (multi-pass, full-shuffle). Compared
+with Table 4, two other baselines (GRU4Rec and BERT4Rec) are included for completeness.
+
+
+
+
+Results are presented in Table 12. We reuse BERT4Rec results and GRU4Rec results on ML-1M and ML-20M as reported
+by Klenitskiy & Vasilev (2023). Given a sampled softmax loss is used, we hold the number of negatives used constant (128
+for ML-1M, ML-20M and 512 for Amazon Books) to ensure a fair comparison between methods.
+The results confirm that SASRec remains one of the most competitive approaches in traditional sequential recommendation
+settings when sampled softmax loss is used (Zhai et al., 2023a; Klenitskiy & Vasilev, 2023), while HSTU significantly
+outperforms evaluated transformers, RNNs, and self-supervised bidirectional transformers.
+
+E. Evaluation: Traditional DLRM Baselines
+The DLRM baseline configurations used in Section 4 reflect continued iterations of hundreds of researchers and engineers
+over multiple years and a close approximation of production configurations on a large internet platform with billions of daily
+active users before HSTUs/GRs were deployed. We give a high level description of the models used below.
+Ranking Setting. The baseline ranking model, as described in (Mudigere et al., 2022), employs approximately one thousand
+dense features and fifty sparse features. We incorporated various modeling techniques such as Mixture of Experts (Ma
+et al., 2018), variants of Deep & Cross Network (Wang et al., 2021), various sequential recommendation modules including
+target-aware pairwise attention (one commonly used variant in industrial settings can be found in (Zhou et al., 2018)), and
+residual connection over special interaction layers (He et al., 2015; Zhang et al., 2022). For the low FLOPs regime in the
+scaling law section (Section 4.3.1), some modules with high computational costs were simplified and/or replaced with other
+state-of-the-art variants like DCNs to achieve desired FLOPs.
+While we cannot disclose the exact settings due to confidentiality considerations, to the best of our knowledge, our baseline
+represents one of the best known DLRM approaches when recent research are fully incorporated. To validate this claim and
+to facilitate readers’ understanding, we report a typical setup based on identical features but only utilizing major published
+results including DIN (Zhou et al., 2018), DCN (Wang et al., 2021), and MMoE (Ma et al., 2018) (“DLRM (DIN+DCN)”)
+in Table 7, with the combined architecture illustrated in Figure 9. This setup significantly underperformed our production
+DLRM setup by 0.71% in NE for the main E-Task and 0.57% in NE for the main C-Task (where 0.1% NE is significant).
+Retrieval Setting. The baseline retrieval model employs a standard two-tower neutral retrieval setting (Covington et al.,
+2016) with mixed in-batch and out-of-batch sampling. The input feature set consists of both high cardinality sparse features
+(e.g., item ids, user ids) and low cardinality sparse features (e.g. languages, topics, interest entities). A stack of feed forward
+layers with residual connections (He et al., 2015) is used to compress the input features into user and item embeddings.
+Features and Sequence Length. The features used in both of the DLRM baselines, including main user interaction history
+that is utilized by various sequential encoder/pairwise attention modules, are strict supersets of the features used in all GR
+candidates. This applies to all studies conducted in this paper, including those used in the scaling studies (Section 4.3.1).
+
+                                                                  20
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+                                                        task-1     task-2     …           task-n
+
+
+
+
+                                                                   Task arch with MOE
+
+
+
+                                                                    Interaction arch:
+                                                                 Deep and Cross Network
+
+
+
+
+                                          Sparse seq        Pooled              Dense                      Float
+                                            embs             embs               embs                     features
+
+
+
+
+                               Sequence arch:
+                                                                             Embedding
+                                target-aware           Sparse arch                                  Dense arch
+                                                                               arch
+                              pairwise attention
+
+
+
+                           User history sequences &      Sparse              Embedding
+                                                                                                   Float Features
+                              ranking candidates        features              features
+
+Figure 9. A high level architecture of a baseline DLRM ranking model (“DLRM (DIN+DCN)” in Table 7) that utilizes major published
+work including DIN (Zhou et al., 2018), DCN (Wang et al., 2021), and MMoE (Ma et al., 2018).
+
+
+                                                                                        Selection Type
+                                         Metric Name
+                                                                            Greedy        Weighted Random
+                            Main Engagement Metric (NE)                      0.495                 0.494            0.495
+                            Main Consumption Metric (NE)                     0.792                 0.789            0.791
+Table 13. Comparison of subsequence selection methods for Stochastic Length on model quality, measured by Normalized Entropy (NE).
+
+
+F. Stochastic Length
+F.1. Subsequence Selection
+In Equation (4), we select a subsequence of length L from the full user history in order to increase sparsity. Our empirical
+results indicate that careful design of the subsequence selection technique can improve model quality. We compute a metric
+fi = tn − ti which corresponds to the amount of time elapsed since the user interacted with item xi . We conduct offline
+experiments with the following subsequence selection methods:
+
+   • Greedy Selection – Selects L items with smallest values of fi from S
+   • Random Selection – Selects L items from S randomly
+                                                                                                         PL
+   • Feature-Weighted Selection – Selects L items from S according to a weighted distribution 1 − fn,i /( j=1 fj,i )
+
+During our offline experiments, the feature-weighted subsequence selection method resulted in the best model quality, as
+shown in Table 13.
+
+F.2. Impact of Stochastic Length on Sequence Sparsity
+In Table 3, we show the impact of Stochastic Length on sequence sparsity for a representative industry-scale configuration
+with 30-day user engagement history. The sequence sparsity is defined as one minus the ratio of the average sequence length
+of all samples divided by the maximum sequence length. To better characterize the computational cost of sparse attentions,
+we also define s2, which is defined as one minus the sparsity of the attention matrix. For reference, we present the results for
+60-day and 90-day user engagement history in Table 14 and Table 15, respectively.
+
+                                                                       21
+                                   Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+                                                                                                                                                           Max Sequence Length
+                                                        Alpha
+                                                                                    1,024                                                          2,048                                                                 4,096                                       8,192
+                                                                              sparsity    s2                                                 sparsity    s2                                                        sparsity    s2                              sparsity    s2
+                                                               1.6                 71.5%                                  89.4%                    75.8%               92.3%                                           79.4%               94.7%                  83.8%                                    97.3%
+                                                               1.7                 57.3%                                  77.6%                    60.6%               79.8%                                           67.3%               86.6%                  74.5%                                    93.3%
+                                                               1.8                 37.5%                                  56.2%                    42.6%               62.1%                                           51.9%               74.2%                  62.6%                                    85.5%
+                                                               1.9                 15.0%                                  25.2%                    17.7%               29.0%                                           29.6%               47.5%                  57.8%                                    80.9%
+                                                               2.0                  1.2%                                   1.7%                     2.5%                3.5%                                           18.9%               30.8%                  57.6%                                    80.6%
+                                                       Table 14. Impact of Stochastic Length (SL) on sequence sparsity, over a 60d user engagement history.
+
+                                                                                                                                                           Max Sequence Length
+                                                        Alpha
+                                                                                    1,024                                                          2,048                                                                 4,096                                       8,192
+                                                                              sparsity    s2                                                 sparsity    s2                                                        sparsity    s2                              sparsity    s2
+                                                               1.6                 68.0%                                  85.0%                    74.6%               90.8%                                           78.6%               93.5%                  83.5%                                    97.3%
+                                                               1.7                 56.3%                                  76.1%                    61.2%               80.6%                                           67.5%               87.0%                  74.3%                                    93.3%
+                                                               1.8                 38.9%                                  58.3%                    42.0%               61.3%                                           50.4%               72.4%                  61.0%                                    84.4%
+                                                               1.9                 16.2%                                  27.3%                    17.3%               28.6%                                           27.2%               44.4%                  54.3%                                    77.8%
+                                                               2.0                  0.9%                                   1.2%                     1.6%                2.1%                                           13.5%               22.5%                  54.0%                                    77.4%
+                                                       Table 15. Impact of Stochastic Length (SL) on sequence sparsity, over a 90d user engagement history.
+
+
+
+F.3. Comparisons Against Sequence Length Extrapolation Techniques
+We conduct additional studies to verify that Stochastic Length is competitive against existing techniques for sequence
+length extrapolation used in language modeling. Many existing methods perform sequence length extrapolation through
+modifications of RoPE (Su et al., 2023). To compare against existing methods, we train an HSTU variant (HSTU-RoPE)
+with no relative attention bias and rotary embeddings.
+We evaluate the following sequence length extrapolation methods on HSTU-RoPE:
+
+   • Zero-Shot - Apply NTK-Aware RoPE (Peng et al., 2024) before directly evaluating the model with no finetuning;
+   • Fine-tune - Finetune the model for 1000 steps after applying NTK-by-parts (Peng et al., 2024).
+
+We evaluate the following sequence length extrapolation methods on HSTU (includes relative attention bias, no rotary
+embeddings):
+
+   • Zero-Shot - Clamp the relative position bias according to the maximum training sequence length, directly evaluate the
+     model (Raffel et al., 2020; Press et al., 2022);
+   • Fine-tune - Clamp the relative position bias according to the maximum training sequence length, fine-tune the model
+     for 1000 steps before evaluating the model.
+
+                                   Average NE Across Tasks      Percent Sparsity                                        Average NE Across Tasks     Percent Sparsity                                             Average NE Across Tasks    Percent Sparsity                                         Average NE Across Tasks    Percent Sparsity
+                               0.0030                                                                               0.0040                                                                                   0.0030                                        100.0%                                0.0015                                        110.0%
+
+                                                                               75.0%                                                                               75.0%                                                                                                                                                                       90.0%
+   NE Difference vs Baseline
+
+
+
+
+                                                                                        NE Difference vs Baseline
+
+
+
+
+                                                                                                                                                                                 NE Difference vs Baseline
+
+
+
+
+                                                                                                                                                                                                                                                                     NE Difference vs Baseline
+
+
+
+
+                                                                                                                    0.0030                                                                                                                                 75.0%
+                               0.0020                                                                                                                                                                        0.0020                                                                              0.0010                                        70.0%
+                                                                               50.0%                                                                               50.0%
+                                                                                                                    0.0020                                                                                                                                 50.0%
+                                                                                                                                                                                                                                                                                                                                               50.0%
+                               0.0010                                                                                                                                                                        0.0010                                                                              0.0005
+                                                                               25.0%                                                                               25.0%                                                                                                                                                                       30.0%
+                                                                                                                    0.0010                                                                                                                                 25.0%
+
+                                                                                                                                                                                                                                                                                                                                               10.0%
+                               0.0000                                          0.0%                                                                                0.0%                                      0.0000                                        0.0%                                  0.0000
+                                                                                                                    0.0000
+                                                                                                                                                                                                                                                                                                                                               -10.0%
+                                                                               -25.0%                                                                              -25.0%                                                                                  -25.0%
+                               -0.0010                                                                              -0.0010                                                                                  -0.0010                                                                             -0.0005                                       -30.0%
+                                          1.6    1.7    1.8     1.9     2                                                      1.6    1.7    1.8    1.9     2                                                           1.6   1.7    1.8    1.9     2                                                       1.6   1.7    1.8    1.9     2
+                                                       Alpha                                                                                Alpha                                                                                   Alpha                                                                               Alpha
+
+
+
+Figure 10. Impact of Stochastic Length (SL) on ranking model metrics. Left to right: n = [1024, 2048, 4096, 8192] (n is after interleaving
+algorithm as discussed in Section 2.2 to enable target-aware cross attention in causal-masked settings).
+
+                                                                                                                                                                            22
+      Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+                                                    Average NE Difference vs Full Sequence Baseline
+              Evaluation Strategy
+                                                Model Type               2048 / 52% Sparsity   4096 / 75% Sparsity
+                                        HSTU (Raffel et al., 2020)             6.46%                 10.35%
+                    Zero-shot
+                                      HSTU-RoPE (Peng et al., 2024)            7.51%                 11.27%
+                                        HSTU (Raffel et al., 2020)             1.92%                  2.21%
+                    Fine-tune
+                                      HSTU-RoPE (Peng et al., 2024)            1.61%                  2.19%
+             Stochastic Length (SL)                HSTU                        0.098%                 0.64%
+
+                    Table 16. Comparisons of Stochastic Length (SL) vs existing Length Extrapolation methods.
+
+
+In Table 16, we report the NE difference between models with induced data sparsity during training (Stochastic Length,
+zero-shot, fine-tuning) and models trained on the full data. We define the sparsity for zero-shot and fine-tuning techniques to
+be the average sequence length during training divided by the max sequence length during evaluation. All zero-shot and
+fine-tuned models are trained on 1024 sequence length data and are evaluated against 2048 and 4096 sequence length data.
+In order to find an appropriate Stochastic Length baseline for these techniques, we select Stochastic Length settings which
+result in the same data sparsity metrics.
+We believe that zero-shot and fine-tuning approaches to sequence length extrapolation are not well-suited for recommendation
+scenarios that deal with high cardinality ids. Empirically, we observe that Stochastic Length significantly outperforms
+fine-tuning and zero-shot approaches. We believe that this could be due to our large vocabulary size. Zero-shot and
+fine-tuning approaches fail to learn good representations for older ids, which could hurt their ability to fully leverage the
+information contained in longer sequences.
+
+G. Sparse Grouped GEMMs and Fused Relative Attention Bias
+We provide additional information about the efficient HSTU attention kernel that was introduced in Section 3.2. Our
+approach builds upon Memory-efficient Attention (Rabe & Staats, 2021) and FlashAttention (Dao et al., 2022), and is a
+memory-efficient self-attention mechanism that divides the input into blocks and avoids materializing the large h × N × N
+intermediate attention tensors for the backward pass. By exploiting the sparsity of input sequences, we can reformulate the
+attention computation as a group of back-to-back GEMMs with different shapes. We implement efficient GPU kernels to
+accelerate this computation. The construction of the relative attention bias is also a bottleneck due to memory accesses.
+To address this issue, we have fused the relative bias construction and the grouped GEMMs into a single GPU kernel and
+managed to accumulate gradients using GPU’s fast shared memory in the backward pass. Although our algorithm requires
+recomputing attention and relative bias in the backward pass, it is significantly faster and uses less memory than the standard
+approach used in Transformers.
+
+
+
+
+                                                               23
+        Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+H. Microbatched-Fast Attention Leveraging Cacheable OperatioNs (M-FALCON)
+In this section, we provide a detailed description of the M-FALCON algorithm discussed in Section 3.4. We give pseudocode
+for M-FALCON in Algorithm 1. M-FALCON introduces three key ideas.
+
+               Supervision (Expected
+                 Next Token Φi/ai)          a0          Φ1           ...          anc-1
+
+
+                   Prediction Layer                                  ...
+
+
+
+               Self-Attention Block(s)
+
+
+
+                 Embedding Layers                                    ...
+
+
+                  Training Input            Φ0           a0                      Φnc-1          anc-1
+                                                                     ...
+                  Token Sequence
+
+                         (a) GR’s ranking model training (with n = 2nc tokens), in causal autoregressive settings.
+
+                 Batched predictions
+                    (a'0...a'bm-1)                                                                           a'0         ...         a'bm-1
+
+
+                   Prediction Layer                                                                                      ...
+
+
+
+               Self-Attention Block(s)                                                                                  X
+
+
+
+                 Embedding Layers                                   ...                                                  ...
+
+
+                  Combined Input
+                                            Φ0           a0                      Φnc-1         anc-1         Φ' 0        ...         Φ'bm-1
+                  Token Sequence
+
+
+
+                   All m Ranking                  Φ'0         ...   Φ ' bm - 1   Φ ' bm - 1    ...      Φ'2bm-1                ...   Φ'm-1
+                    Candidates
+
+                     Microbatches
+                    in M-FALCON                         Microbatch 0                      Microbatch 1              Microbatch m/bm-1
+
+                                    (b) GR’s ranking model inference utilizing the M-FALCON algorithm.
+Figure 11. Illustration of the M-FALCON algorithm. Top: model training in GR’s target-aware formulation. Bottom: model inference
+with m candidates Φ′0 , . . . , Φ′m−1 , divided into ⌈m/bm ⌉ microbatches, where we show model inference for the first microbatch
+Φ′0 , . . . , Φ′bm −1 (with 2nc + bm total tokens after Φ0 , a0 , . . . , Φnc −1 , anc −1 are taken into account) above the dotted line. Note that the
+self-attention algorithm is modified such that Φ′i cannot attend to Φ′j when i ̸= j – this is highlighted with “×” in the figure.
+
+Batched inference can be applied to causal autoregressive settings. The ranking task in GR is formulated in a target
+aware fashion as discussed Section 2.2. Common wisdom suggests that in a target-aware setting, we need to perform
+inference for one item at a time, with a cost of O(mn2 d) for m candidates and a sequence length of n. Here we show that
+this is not the optimal solution; even with vanilla Transformers, we can modify the attention mask used in self-attention to
+batch such operations (“batched inference”) and reduce cost to O((n + m)2 d) = O(n2 d).
+An illustration is provided in Figure 11. Here, both Figure 11 (a) and (b) involve an attention mask matrix for causal
+autoregressive settings. The key difference is that Figure 11 (a) uses a standard lower triangular matrix of size 2nc for causal
+
+                                                                           24
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+training, whereas Figure 11 (b) modifies a lower triangular matrix of size 2nc + bm by setting entries for (i, j)s where
+i, j ≥ 2nc , i ̸= j to False or −∞ to prevent target positions Φ′0 , . . . , Φ′bm −1 from attending to each other. It is easy to see
+that by doing so, the output of the self-attention block for Φ′i , a′i , only depends on Φ0 , a0 , . . . , Φnc −1 , anc −1 , but not on Φ′j
+(i ̸= j). In other words, by making a forward pass over (2nc + bm ) tokens using the modified attention mask, we can now
+obtain the same results for the last bm tokens as if we’ve made bm separate forward passes over (2nc + 1) tokens, with Φ′i
+placed at the 2nc -th (0-based) position during the i-th forward pass utilizing a standard causal attention mask.
+Microbatching scales batched inference to large candidate sets. Ranking stage may need to deal with a large number
+of ranking candidates, up to tens of thousands (Wang et al., 2020). We can divide the overall m candidates into ⌈m/bm ⌉
+microbatches of size bm such that O(bm ) = O(n), which retains the O((n + m)2 d) = O(n2 d) running time previously
+discussed for most practical recommender settings, up to tens of thousands of candidates.
+Encoder-level caching enables compute sharing within and across requests. Finally, KV caching (Pope et al., 2022)
+can be applied both within and across requests. For instance, for the HSTU model presented in this work (Section 3),
+K(X) and V (X) are fully cachable across microbatches within and/or across requests. For a cached forward pass, we only
+need to compute U (X), Q(X), K(X), and V (X) for the last bm tokens, while reusing cached K(X) and V (X) for the
+sequentialized user history containing n tokens. f2 (Norm(A(X)V (X)) ⊙ U (X)) similarly only needs to be recomputed
+for the bm candidates. This reduces the cached forward pass’s computational complexity to O(bm d2 + bm nd), which
+significantly improves upon O((n + bm )d2 + (n + bm )2 d) by a factor of 2-4 even when bm = n.
+
+Algorithm 1 M-FALCON Algorithm.
+ 1: Input: Merged token series x0 , x1 , . . . , xn−1 (can be e.g., (Φ0 , a0 , . . . , Φnc −1 , anc −1 ) where n = 2nc ); m ranking
+    candidates Φ′0 , . . . , Φ′m−1 ; a b-layer h-heads self-attention model trained in causal autoregressive settings (e.g., HSTU or
+    Transformers) f (X, cacheStates, attnM ask) → (X ′ , updatedCacheStates) where X, X ′ ∈ RN ×d , attnM ask ∈
+    RN ×N , and cachedStates, updatedCacheStates ∈ Rb×h×N ×dqk ×Rb×h×N ×dqk (due to caching K(X)s and V (X)s
+    across b layers); microbatch size bm , where we assume m is a multiple of bm for simplicity.
+ 2: Output: Predictions for all m ranking candidates, (a′0 , . . . , a′m−1 ).
+ 3: numM icrobatches = (m + bm − 1)//bm
+ 4: attnM ask = Ln+bm {Ln+bm represents a lower triangular matrix. Lower triangular entries are 0s, the rest are −∞.}
+ 5: attnM ask[i, j] = −∞ for i, j ≥ n, i ̸= j {This prevents the last bm entries from attending to each other.}
+ 6: (a′0 , a′1 , . . . , a′bm −1 ), kvCache ← f (embLayer((x0 , x1 , . . . , xn−1 , Φ′0 , . . . , Φ′bm −1 )), ∅, attnM ask)
+ 7: predictions = (a′0 , a′1 , . . . , a′bm −1 )
+ 8: i = 1
+ 9: while i < numM icrobatches do
+10:    (a′bm i , a′bm i+1 , a′bm (i+1)−1 ), ← f (embLayer((x0 , x1 , . . . , xn−1 , Φ′bm i , . . . , Φ′bm (i+1)−1 )), kvCache, attnM ask)
+11:    predictions ← predictions + (a′bm i , a′bm i+1 , . . . , a′bm (i+1)−1 )
+12:    i←i+1
+13: end while
+14: return predictions
+
+
+Algorithm 1 is illustrated in Figure 11 to help with understanding. We remark that M-FALCON is not only applicable
+to HSTUs and GRs, but also broadly applicable as an inference optimization algorithm for other target-aware causal
+autoregressive settings based on self-attention architectures.
+
+H.1. Evaluation of Inference Throughput: Generative Recommenders (GRs) w/ M-FALCON vs DLRMs
+As discussed in Section 3.4, M-FALCON handles bm candidates in parallel to amortize computation costs across all m
+candidates at inference time. To understand our design, we compare the throughput (i.e., the number of candidates scored
+per second, QPS) of GRs and DLRMs based on the same hardware setups.
+As shown in Figure 12 and Figure 13, GRs’ throughput scales in a sublinear way based on the number of ranking-stage
+candidates (m), up to a certain region – m = 2048 in our case study – due to batched inference enabling cost amortization.
+This confirms the criticality of batched inference in causal autoregressive settings. Due to attention complexity scaling as
+O((n + bm )2 ), leveraging multiple microbatches by itself improves throughput. Caching further eliminates redundant linear
+and attention computations on top of microbatching. The two combined resulted in up to 1.99x additional speedups relative
+
+                                                                    25
+       Actions Speak Louder than Words: Trillion-Parameter Sequential Transducers for Generative Recommendations
+
+to the bm = m = 1024 baseline using a single microbatch, as shown in Figure 13. Overall, with the efficient HSTU encoder
+design and utilizing M-FALCON, HSTU-based Generative Recommenders outperform DLRMs in terms of throughput on a
+large-scale production setup by up to 2.99x, despite GRs being 285x more complex in terms of FLOPs.
+                                                        GR (101x FLOPs)           GR (285x FLOPs)         DLRM (1x FLOPs)
+                                                        1,250,000
+
+                                                        1,000,000
+
+                                                         750,000
+                                                  QPS
+
+
+
+                                                         500,000
+
+                                                         250,000
+
+                                                                  0
+                                                                      32          64     128        256      512      1024
+                                                                      Candidates scored in M-FALCON (m)
+
+Figure 12. End-to-end inference throughtput: DLRMs vs GRs (w/ M-FALCON) in large-scale industrial settings. Note that this figure is
+the same as Figure 6, and is reproduced here to facilitate reading.
+
+                                                            single microbatch     multiple microbatches (microbatch size=1024)
+                                                                  multiple microbatches (microbatch size=1024) + caching
+                                            2.0
+                 Relative QPS (vs m=1024)
+
+
+
+
+                                            1.5
+
+
+                                            1.0
+
+
+                                            0.5
+
+
+                                            0.0
+                                                           1024            2048              4096           8192             16384
+
+                                                                            Candidates scored in M-FALCON (m)
+Figure 13. End-to-end inference throughtput: M-FALCON throughput scaling, on top of the 285x FLOPs GR model, in large batch
+settings where m (total number of ranking candidates) ranges from 1024 to 16384, and bm = 1024.
+
+
+
+
+                                                                                        26
+

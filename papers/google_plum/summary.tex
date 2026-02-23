@@ -1,0 +1,76 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\begin{document}
+
+\section*{PLUM: Adapting Pre-trained Language Models for Industrial-scale Generative Recommendations (Google, 2025)}
+
+\subsection*{Challenges}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Scaling limits of embedding-table-based retrieval.} The paper frames industrial recommenders as dominated by large embedding models (LEMs), which scale primarily by enlarging embedding tables and thus face memory/compute bottlenecks and diminishing returns. The authors emphasize that this approach ``is in contrast to the inherent sequence modeling capabilities and vast world knowledge'' of LLMs (Introduction).
+  \item \textbf{Need for compact, semantically meaningful IDs.} Generative retrieval models rely on Semantic IDs (SIDs) that compress items into discrete token sequences. The paper notes that retrieval quality is ``fundamentally dependent'' on SID quality (Section 2), and SID generation must encode multi-modal content and collaborative signals rather than single-modality embeddings.
+  \item \textbf{Aligning LLMs to recommendation signals.} LLMs are not natively aligned to user behavior signals or industrial item vocabularies. PLUM must teach the model a new modality (SIDs) and align it with language, while preserving scaling benefits and deployment constraints.
+  \item \textbf{Industrial constraints (latency/throughput).} The system must operate under YouTube-scale retrieval traffic. The paper repeatedly stresses production constraints and reports live experiments that require practical feasibility beyond offline metrics.
+\end{itemize}
+
+\subsection*{Key Initiatives (Core Contributions)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{PLUM framework for LLM-based generative retrieval.} ``We introduce PLUM'' as an end-to-end framework to adapt pre-trained LLMs for industrial recommendation retrieval, replacing embedding-table heavy architectures with SID generation and autoregressive retrieval (Abstract + Sec. 2).
+  \item \textbf{SIDv2: improved semantic ID generation.} The paper introduces ``a set of new techniques (referred to as SID-v2)'' that improve SID quality. These include multi-modal fusion, hierarchical codebooks, and co-occurrence regularization, with the explicit goal of producing SIDs that better match user behavior co-occurrence (Sec. 2.1).
+  \item \textbf{Continued Pre-Training (CPT).} The model is ``further pre-trained on a mixture of domain text data'' (Abstract) to align SIDs with language tokens and leverage LLM capabilities in recommendation context. This CPT stage is a core alignment step before fine-tuning.
+  \item \textbf{SFT for generative retrieval.} The retrieval model is trained to ``autoregressively generate the SIDs of next items'' (Sec. 2.3), enabling a direct generative retrieval formulation instead of embedding lookup.
+  \item \textbf{Scaling study at iso-FLOPs.} The paper presents ``a scaling study for the model’s retrieval performance'' (Abstract) with MoE variants and synchronized data/model scaling, emphasizing compute-optimal training patterns.
+\end{itemize}
+
+\subsection*{Methodology}
+\paragraph{Overall Pipeline}
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{SID generation (SIDv2).} Items are compressed into hierarchical SID token sequences using a semantic ID model (RQ-VAE style) with multi-modal fusion and collaborative regularization.
+  \item \textbf{Continued Pre-Training (CPT).} An LLM is further pre-trained on a mixture of user behavior sequences (with SIDs) and domain text, to align the new SID modality with the LLM token space.
+  \item \textbf{Supervised Fine-Tuning (SFT).} The model is fine-tuned to autoregressively predict next-item SIDs from user context and history, yielding a generative retrieval model.
+\end{enumerate}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{fig2_generative_retrieval.png}
+  \caption{Generative retrieval overview (from PLUM paper, Figure 2).}
+\end{figure}
+
+\paragraph{SIDv2 Details (from Sec. 2.1)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Multi-modal fusion:} The SID model combines multiple video embeddings (e.g., text, visual, audio) and projects them into a unified representation before quantization. The paper describes a concatenation of modality embeddings and a projection into shared space, explicitly designed to avoid isolated modality tokens.
+  \item \textbf{Hierarchical multi-resolution codebooks:} The vocabulary size decreases with hierarchy depth to preserve fine detail early while compressing higher levels. This structure enables semantic hierarchies and improves coverage.
+  \item \textbf{Progressive masking:} Higher-level codebooks are masked during training to enforce hierarchical dependence, making SIDs more robust and semantically structured.
+  \item \textbf{Co-occurrence contrastive loss:} The model injects collaborative filtering signals directly into SID space, encouraging items frequently co-watched to map to closer SIDs.
+\end{itemize}
+
+\paragraph{Training Objectives (Sec. 2.2--2.3)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{CPT objective:} Next-token prediction on combined corpora: user watch histories (SIDs) and domain text. The paper notes that this aligns SIDs with text tokens, improving in-context learning and language grounding.
+  \item \textbf{SFT objective:} Minimize negative log-likelihood of next SID tokens, i.e., ``the model is trained to minimize the following loss'' for autoregressive next-item prediction.
+  \item \textbf{Decoding:} Retrieval uses beam search over SID token sequences to generate candidate items (Sec. 2.3).
+\end{itemize}
+
+\subsection*{Experiments}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Datasets:} Large-scale internal YouTube recommendation datasets spanning Long-Form Video (LFV) and Shorts.
+  \item \textbf{Baselines:} Heavily-optimized Transformer-based retrieval model using large embedding tables (LEMs), reflecting production practice (Sec. 3).
+  \item \textbf{Main retrieval gains:} The paper reports that ``PLUM achieves substantial improvements for retrieval compared to a heavily-optimized production model built with large embedding tables'' (Abstract). Table 1 shows lift in CTR and watch-time metrics across LFV and Shorts.
+  \item \textbf{SIDv2 gains:} Table 4 ablations highlight SIDv2 improvements over SIDv1, including higher SID uniqueness and better retrieval recall.
+  \item \textbf{Scaling study:} The paper demonstrates that synchronized scaling of model size and training data yields continued performance gains, with MoE models (\textgreater900M activated parameters) showing strong scaling behavior.
+  \item \textbf{Live experiments:} The model was tested in live traffic by inserting PLUM recommendations into the candidate pool; results validate production relevance.
+\end{itemize}
+
+\subsection*{References (selected)}
+\begin{itemize}[leftmargin=1.5em]
+  \item Hoffmann et al. (2022). Training compute-optimal large language models. arXiv:2203.15556.
+  \item Kang \& McAuley (2018). Self-Attentive Sequential Recommendation. arXiv:1808.09781.
+  \item Liu et al. (2022). Monolith: Real Time Recommendation System With Collisionless Embedding Table. arXiv:2209.07663.
+  \item Li et al. (2025). BBQRec: Behavior-Bind Quantization for Multi-Modal Sequential Recommendation. arXiv:2504.06636.
+  \item Huang et al. (2025). Towards Large-scale Generative Ranking. arXiv:2505.04180.
+  \item Ju et al. (2025). Generative Recommendation with Semantic IDs: A Practitioner’s Handbook. arXiv:2507.22224.
+\end{itemize}
+
+\end{document}

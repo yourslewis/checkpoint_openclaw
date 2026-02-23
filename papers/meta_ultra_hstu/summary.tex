@@ -1,0 +1,81 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\begin{document}
+
+\section*{ULTRA-HSTU: Bending the Scaling Law Curve in Large-Scale Recommendation Systems (Meta, 2026)}
+
+\subsection*{Challenges}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Scaling inefficiency of prior long-sequence recommenders.} The paper targets the gap between model quality gains and the rapid growth of training/inference FLOPs in long-sequence settings. It emphasizes that scaling must improve both \emph{quality} and \emph{efficiency} for industrial deployment.
+  \item \textbf{Ultra-long user histories.} Industrial recommenders process sequences with thousands to tens of thousands of events; the paper evaluates sequences of length 3,072 to 16,384 and highlights the need to preserve signal without exploding compute.
+  \item \textbf{Model–system co-design.} Achieving practical speedups requires architectural changes plus system-level optimizations (e.g., attention kernels, precision formats), not just algorithmic tweaks.
+\end{itemize}
+
+\subsection*{Key Initiatives (Core Contributions)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{ULTRA-HSTU architecture and scaling design.} The paper proposes ULTRA-HSTU to improve scaling efficiency, reporting large gains in training and inference scaling slopes vs vanilla HSTU.
+  \item \textbf{Input-sequence optimization + semi-local attention.} It introduces sequence design and attention patterns that significantly reduce compute while maintaining accuracy.
+  \item \textbf{Model–system co-design.} The paper integrates mixed-precision/FP8 pipelines and optimized attention kernels to realize end-to-end efficiency gains.
+\end{itemize}
+
+\subsection*{Methodology}
+\paragraph{Model Overview (Figure 2)}
+Figure~\ref{fig:model} shows the model-design overview from the paper, covering the general recommender design and the input-sequence optimization pipeline used by ULTRA-HSTU.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{fig2_model_design.png}
+  \caption{Model design overview (from ULTRA-HSTU paper, Figure 2).}
+  \label{fig:model}
+\end{figure}
+
+\paragraph{Training Setup}
+Industrial evaluation uses a large-scale internal dataset with \textbf{over 6 billion samples}. Sequences range from \textbf{3,072 to 16,384 events}. The paper uses a chronological split: \textbf{85\% training, 15\% evaluation}. The metric is NE (lower is better), with C-NE and E-NE for consumption/engagement tasks.
+
+\subsection*{Experiments (with key numbers)}
+\paragraph{Industrial Dataset Benchmark (Table 1)}
+\begin{itemize}[leftmargin=1.5em]
+  \item ULTRA-HSTU is the baseline (0\% / 0\% by definition). Competing models show positive deltas (worse):
+  \item \textbf{HSTU:} \(\Delta\)C-NE = \textbf{+0.43\%}, \(\Delta\)E-NE = \textbf{+0.04\%}
+  \item \textbf{STCA:} \(\Delta\)C-NE = \textbf{+0.94\%}, \(\Delta\)E-NE = \textbf{+0.74\%}
+  \item \textbf{Transformer:} \(\Delta\)C-NE = \textbf{+0.57\%}, \(\Delta\)E-NE = \textbf{+0.59\%}
+  \item \textbf{DIN:} \(\Delta\)C-NE = \textbf{+1.41\%}, \(\Delta\)E-NE = \textbf{+1.91\%}
+  \item \textbf{SASRec:} \(\Delta\)C-NE = \textbf{+1.12\%}, \(\Delta\)E-NE = \textbf{+1.28\%}
+\end{itemize}
+
+\paragraph{Scaling on Industrial Dataset (Table 2)}
+ULTRA-HSTU improves C-NE while lowering FLOPs. Example entries:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{ULTRA-HSTU @ 8,192 length, 18 layers:} \(\Delta\)C-NE \textbf{-0.58\%} with \textbf{Training TFLOP 0.414} (\(\downarrow\)43.7\%) and \textbf{Inference TFLOP 0.337} (\(\downarrow\)87.8\%).
+  \item \textbf{ULTRA-HSTU @ 16,384 length, 18 layers:} \(\Delta\)C-NE \textbf{-0.78\%} with \textbf{Training TFLOP 0.639} (\(\downarrow\)59.7\%) and \textbf{Inference TFLOP 0.436} (\(\downarrow\)90.7\%).
+\end{itemize}
+
+\paragraph{Open-source Benchmark (Table 3)}
+On KuaiRand, ULTRA-HSTU achieves the best NE with lower compute:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{ULTRA-HSTU:} Training TFLOP \textbf{504.41}, Inference TFLOP \textbf{166.41}, NE \textbf{0.8626} (best among baselines shown).
+  \item Compared to HSTU (NE 0.8676) and Transformer (NE 0.8688), ULTRA-HSTU is both more accurate and more efficient.
+\end{itemize}
+
+\subsection*{References (selected)}
+\begin{itemize}[leftmargin=1.5em]
+  \item Zhai et al. (2024). HSTU.
+  \item Guan et al. (2025). STCA.
+  \item Zhou et al. (2018). DIN.
+  \item Kang \& McAuley (2018). SASRec.
+\end{itemize}
+
+\subsection*{References (Big-company, as cited in the paper)}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Meta}: Zhai et al. (2024). HSTU.
+  \item \textbf{ByteDance (Douyin)}: Guan et al. (2025). End-to-end 10k-sequence modeling at billion scale on Douyin.
+  \item \textbf{Meituan}: Han et al. (2025). MTGR: Industrial-scale generative recommendation framework in Meituan.
+  \item \textbf{Kuaishou}: Si et al. (2024). Twin v2: Scaling ultra-long user behavior sequence modeling at Kuaishou.
+  \item \textbf{Alibaba}: Chen et al. (2019). Behavior sequence transformer for e-commerce recommendation in Alibaba.
+  \item \textbf{Not cited in this paper}: Google, Microsoft, Pinterest.
+\end{itemize}
+
+\end{document}
