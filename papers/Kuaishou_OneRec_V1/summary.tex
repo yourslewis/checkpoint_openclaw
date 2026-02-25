@@ -1,0 +1,62 @@
+% OneRec V1 Paper Review Summary (LaTeX)
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\begin{document}
+
+\section*{OneRec Technical Report (OneRec-V1) (2025)}
+\textbf{arXiv:2506.13695v4 (cs.IR), 16 Sep 2025.}
+
+\subsection*{Challenges}
+\begin{itemize}
+  \item \textbf{Fragmented compute in cascaded pipelines:} significant serving resources go to communication/storage (not compute), and ranker GPU utilization is low (the paper cites training MFU 4.6\% and inference MFU 11.2\% for a cascaded system).
+  \item \textbf{Objective collision:} hundreds of competing objectives (users/creators/platform) introduce inconsistent optimizations and ``patching'' across stages.
+  \item \textbf{Lag behind mainstream AI:} cascaded architectures make it hard to adopt scaling laws + RL techniques that have worked well for LLM/VLM systems.
+\end{itemize}
+
+\subsection*{Key Initiatives}
+\begin{itemize}
+  \item \textbf{End-to-end generative recommendation:} unify retrieve+rank into a single generative model outputting item semantic identifiers.
+  \item \textbf{Scaling up recommendation compute:} increase model FLOPs (paper claims 10$\times$) and empirically study scaling behaviors across parameters, features, codebook size, and inference sampling (Pass@K).
+  \item \textbf{Preference alignment via RL:} learn a personalized reward (P-Score) and optimize generation with a stabilized RL variant (ECPO), plus format reward to maintain legality.
+  \item \textbf{Systems/infra optimization:} push training+inference MFU to LLM-like levels and reduce overall operating expense.
+\end{itemize}
+
+\subsection*{Methodology}
+\begin{itemize}
+  \item \textbf{Tokenizer + semantic IDs:} build collaborative multimodal item representations from item pairs, then quantize into discrete semantic identifiers using RQ-Kmeans (coarse-to-fine; the paper uses $L_t=3$ layers).
+  \item \textbf{Multimodal inputs:} caption/tag/ASR/OCR + cover + frames; processed with miniCPM-V-8B, compressed by a QFormer; trained with an item-to-item contrastive loss plus a caption generation loss (to ``prevent hallucination'').
+  \item \textbf{Encoder--decoder model (MoE):} encoder ingests multi-scale user behavior features (static, short-term, positive feedback, lifelong history with hierarchical compression up to 100k items); decoder autoregressively generates semantic IDs. Figure~\ref{fig:arch} shows the high-level encoder--decoder layout.
+  \item \textbf{Reward system:} combines (1) Preference Reward (P-Score, learned fusion over many engagement objectives), (2) Format Reward (legality of semantic-ID sequences), and (3) Industrial rewards (ecosystem/business constraints).
+  \item \textbf{ECPO (Early-Clipped GRPO):} modifies GRPO by early clipping large policy ratios for negative advantages to improve stability; the paper removes KL loss because RL and SFT are trained jointly.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{fig4_encoder_decoder_architecture.png}
+  \caption{Encoder--decoder overview from the paper (Figure 4).}
+  \label{fig:arch}
+\end{figure}
+
+\subsection*{Experiments}
+\begin{itemize}
+  \item \textbf{Online deployment impact:} ``Deployed in Kuaishou/Kuaishou Lite APP, it handles 25\% of total queries per second (QPS), enhancing overall App Stay Time by 0.54\% and 1.24\%, respectively.''
+  \item \textbf{Efficiency claims:} the paper reports ``23.7\% and 28.8\% Model FLOPs Utilization (MFU)'' for training and inference, and ``operating expense (OPEX) that is only 10.6\% of traditional recommendation pipelines.''
+  \item \textbf{Parameter scaling:} OneRec models from 0.015B to 2.633B show lower NTP loss with larger size; the paper notes the first \textasciitilde{}10B samples yield rapid convergence, with slower gains beyond.
+  \item \textbf{Feature scaling:} adding the full feature set substantially improves multiple reward metrics (e.g., P-Score +28.88\% in their Table~2).
+  \item \textbf{Codebook + inference scaling:} larger codebooks (8k $\rightarrow$ 32k) and larger Pass@K both improve reward metrics; they select Pass@512 for production as a cost/perf trade-off.
+  \item \textbf{Semantic-ID input:} using semantic identifiers for history input achieves comparable performance to sparse vid embeddings at 2.6B scale, with benefits in parameter/communication efficiency.
+\end{itemize}
+
+\subsection*{References (selected; cited/used by the paper)}
+\begin{itemize}
+  \item SIM (Search-based Interest Model): Pi et al., 2020.
+  \item QFormer: Li et al., 2023.
+  \item miniCPM-V-8B: Hu et al., 2024.
+  \item LLaMA3 (caption decoding objective): Dubey et al., 2024.
+  \item RQ-Kmeans (tokenization): Luo et al., 2024. (Compared with RQ-VAE: Lee et al., 2022.)
+  \item GRPO / loss-free MoE load balancing: Liu et al., 2024 (also referenced via DeepSeek).
+\end{itemize}
+
+\end{document}
